@@ -7,7 +7,7 @@ import numpy as np
 import io
 import json
 
-class Eagleearch:
+class EagleSearch:
     def __init__(self, qdrant_url, qdrant_api_key, collection_name="pdf_vectors"):
         # Initialize VLLM model
         self.model = ColPali.from_pretrained(
