@@ -6,6 +6,7 @@ from PIL import Image
 import numpy as np
 import io
 import json
+import base64
 
 class EagleSearch:
     def __init__(self, qdrant_url, qdrant_api_key, collection_name="pdf_vectors"):
@@ -195,8 +196,17 @@ class EagleSearch:
         
         doc.close()
 
-    def search(self, query, limit=10, prefetch_limit=100):
-        """Search through processed PDFs"""
+    def search(self, query, limit=10, prefetch_limit=100, score: bool = False):
+        """Retuns a string of image data of the matching pages.
+
+        Args:
+            query (_type_): The text content of the query.
+            limit (int, optional): Number of results to return. Defaults to 10.
+            prefetch_limit (int, optional): Number of results to fetch from the compressed vector data before reranking. Higher means slower. Defaults to 100.
+
+        Returns:
+            _type_: _description_
+        """
         processed_query = self.processor.process_queries([query]).to(self.model.device)
         query_embedding = self.model(**processed_query)[0]
         query_embedding = query_embedding.to(torch.float32).detach().cpu().numpy()
@@ -220,4 +230,50 @@ class EagleSearch:
             with_payload=True,
             using="original"
         )
-        return response.points
+
+        n=1
+        if score == False:
+            payload = []
+
+            for hit in response.points:
+                payload.append( hit.payload["text_content"]["text_html"].split(' src="data:image/jpeg;base64,\n')[1].replace('"','').replace("\n</div>\n","") )
+        else:
+            payload = {}
+            for hit in response.points:
+                payload[hit.payload["text_content"]["text_html"].split(' src="data:image/jpeg;base64,\n')[1].replace('"','').replace("\n</div>\n","")] = hit.score
+            
+        return payload
+
+    def base64_to_image(self, base64_string):
+        """
+        Convert a base64 string to an image file
+        
+        Parameters:
+        base64_string (str): The base64 encoded image string
+        
+        Returns:
+        PIL.Image: The decoded image
+        """
+        # Remove the data URL prefix if it exists
+        if ',' in base64_string:
+            base64_string = base64_string.split(',')[1]
+        
+        # Decode the base64 string
+        img_data = base64.b64decode(base64_string)
+        
+        # Create an image object from the decoded data
+        img = Image.open(io.BytesIO(img_data))
+        
+        return img
+
+    # Example usage:
+    def save_image(self,base64_string, output_path):
+            """
+            Convert base64 string to image and save to file
+            
+            Parameters:
+            base64_string (str): The base64 encoded image string
+            output_path (str): Path where the image should be saved
+            """
+            img = self.base64_to_image(base64_string)
+            img.save(output_path)
