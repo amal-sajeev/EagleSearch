@@ -9,6 +9,7 @@ import json
 import base64
 from io import BytesIO
 import uuid
+import tqdm
 
 class EagleSearch:
     def __init__(self, qdrant_url, qdrant_api_key, collection_name="pdf_vectors"):
@@ -212,7 +213,7 @@ class EagleSearch:
                         vector=vectors,
                         payload={
                             "doc_id" : f"{doc.name}_{page_num}",
-                            "pdf_name": doc.name,
+                            "pdf_name": doc.name.split("/")[-1],
                             "page_number": page_num,
                             "metadata": metadata,
                             "text_content": text_data,
