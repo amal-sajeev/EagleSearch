@@ -8,6 +8,7 @@ import io
 import json
 import base64
 from io import BytesIO
+import uuid
 
 class EagleSearch:
     def __init__(self, qdrant_url, qdrant_api_key, collection_name="pdf_vectors"):
@@ -200,7 +201,6 @@ class EagleSearch:
                 try:
                     # Extract and clean text
                     text_data = self._extract_page_text(page)
-                    
                     # Convert to image and process
                     image = self._convert_page_to_image(page)
                     vectors = self._process_page(image)
@@ -208,10 +208,11 @@ class EagleSearch:
                     image.save(buffered,format="PNG")
                     # Create point structure for this page
                     point = models.PointStruct(
-                        id=page_num,
+                        id= str(uuid.uuid4()),
                         vector=vectors,
                         payload={
-                            "pdf_path": str(pdf_path),  # Ensure path is string
+                            "doc_id" : f"{doc.name}_{page_num}",
+                            "pdf_name": doc.name,
                             "page_number": page_num,
                             "metadata": metadata,
                             "text_content": text_data,
@@ -295,19 +296,20 @@ class EagleSearch:
             with_payload=True,
             using="original"
         )
-        return response.points
-        # n=1
-        # if score == False:
-        #     payload = []
+        # return response.points
+        n=1
+        if score == False:
+            payload = []
 
-        #     for hit in response.points:
-        #         payload.append( hit.payload["text_content"]["text_html"].split(' src="data:image/jpeg;base64,\n')[1].replace('"','').replace("\n</div>\n","") )
-        # else:
-        #     payload = {}
-        #     for hit in response.points:
-        #         payload[hit.payload["text_content"]["text_html"].split(' src="data:image/jpeg;base64,\n')[1].replace('"','').replace("\n</div>\n","")] = hit.score
+            for hit in response.points:
+                payload.append( hit.payload["page_image"])
+        else:
+            payload = {}
+            for hit in response.points:
+                payload[hit.payload["page_image"]] = hit.score
+                n+=1
             
-        # return payload
+        return payload
 
     def base64_to_image(self, base64_string):
         """

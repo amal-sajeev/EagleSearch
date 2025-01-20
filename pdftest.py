@@ -12,18 +12,18 @@ cruncher = EagleSearch(qdrant_url ="https://c8abf992-e97b-4ccd-a2b0-046e5c9f5ee5
 
 hits = cruncher.search("Components diagram",limit=3,score = True)
 
-with open("output.txt","w") as out:
-    out.write(str(hits))
+# with open("output.txt","w") as out:
+#     out.write(str(hits))
 
 
-# n=0
-# payload = []
+n=0
+payload = []
 
-# for i in hits.keys():
-#     payload.append(hits[i])
-# with open("output.txt", "w") as out:
-#     out.write(str(payload))
-# for i in tqdm(hits):
-#     cruncher.save_image(i,f"{n}.png")
-#     n+=1
+for i in hits.keys():
+    payload.append(hits[i])
+with open("output.txt", "w") as out:
+    out.write(str(payload))
+for i in tqdm(hits):
+    cruncher.save_image(i,f"{n}.png")
+    n+=1
 
