@@ -7,6 +7,7 @@ import numpy as np
 import io
 import json
 import base64
+from io import BytesIO
 
 class EagleSearch:
     def __init__(self, qdrant_url, qdrant_api_key, collection_name="pdf_vectors"):
@@ -61,39 +62,57 @@ class EagleSearch:
                 }
             )
 
+    def _clean_text_data(self, text_data):
+        """Clean text data to ensure it's JSON serializable"""
+        if isinstance(text_data, str):
+            # Replace or remove invalid characters
+            return text_data.encode('utf-8', errors='ignore').decode('utf-8')
+        elif isinstance(text_data, dict):
+            return {k: self._clean_text_data(v) for k, v in text_data.items()}
+        elif isinstance(text_data, list):
+            return [self._clean_text_data(item) for item in text_data]
+        else:
+            return text_data
+
     def _extract_page_text(self, page):
-        """
-        Extract text from a PDF page with enhanced structure preservation
-        """
-        # Get plain text
-        text_plain = page.get_text("text")
-        
-        # Get text with HTML formatting
-        text_html = page.get_text("html")
-        
-        # Get text blocks with position information
-        blocks = page.get_text("blocks")
-        structured_blocks = []
-        
-        for b in blocks:
-            # Each block contains: (x0, y0, x1, y1, "text", block_no, block_type)
-            structured_blocks.append({
-                "bbox": (b[0], b[1], b[2], b[3]),
-                "text": b[4],
-                "block_no": b[5],
-                "block_type": b[6]  # 0=text, 1=image, etc.
-            })
-        
-        # Get text in JSON format with detailed layout info
-        text_dict = page.get_text("dict")
-        
-        return {
+        """Extract text from a PDF page with encoding error handling"""
+        try:
+
+            # Get text with HTML formatting
+            text_html = page.get_text("html")
+
+            # Get plain text
+            text_plain = page.get_text("text", sort=True)
+            
+            # Get text blocks with position information
+            blocks = page.get_text("blocks")
+            structured_blocks = []
+            
+            for b in blocks:
+                # Each block contains: (x0, y0, x1, y1, "text", block_no, block_type)
+                structured_blocks.append({
+                    "bbox": (b[0], b[1], b[2], b[3]),
+                    "text": b[4],
+                    "block_no": b[5],
+                    "block_type": b[6]  # 0=text, 1=image, etc.
+                })
+            
+            # Get text in JSON format with detailed layout info
+            text_dict = page.get_text("dict")
+
+            text_data = {
             "text_plain": text_plain,
             "text_html": text_html,
-            "blocks": structured_blocks,
-            "layout": text_dict,
+            "blocks": structured_blocks
         }
-
+            
+            # Clean the text data
+            return(self._clean_text_data(text_data))
+            
+        except Exception as e:
+            print(f"Error extracting text: {str(e)}")
+            return {"text_plain": "", "blocks": []}
+            
     def _convert_page_to_image(self, page):
         """Alternative method to convert PDF page to PIL Image"""
         try:
@@ -157,44 +176,90 @@ class EagleSearch:
             "mean_pooling_columns": pooled_by_columns.to(torch.float32).detach().cpu().numpy()
         }
 
-    def ingest_pdf(self, pdf_path, batch_size=4):
-        """Process entire PDF and store vectors"""
-        doc = fitz.open(pdf_path)
         
-        # Extract document metadata
+    def ingest_pdf(self, pdf_path, batch_size=4):
+        """Process entire PDF and store vectors with batch processing"""
+        doc = fitz.open(pdf_path)
         metadata = doc.metadata
         
-        for page_num in range(len(doc)):
+        # Clean metadata
+        if metadata:
+            metadata = self._clean_text_data(metadata)
+        
+        total_pages = len(doc)
+        
+        # Process pages in batches
+        for batch_start in range(0, total_pages, batch_size):
+            batch_end = min(batch_start + batch_size, total_pages)
+            batch_points = []
             
-            page = doc[page_num]
-            
-            # Extract text with enhanced structure
-            text_data = self._extract_page_text(page)
-            
-            # Process page as image
-            image = self._convert_page_to_image(page)
-            vectors = self._process_page(image)
-            
-            # Store in Qdrant with enhanced metadata
-            self.client.upsert(
-                collection_name=self.collection_name,
-                points=[models.PointStruct(
-                    id=page_num,
-                    vector=vectors,
-                    payload={
-                        "pdf_path": pdf_path,
-                        "page_number": page_num,
-                        "metadata": metadata,
-                        "text_content": text_data,
-                        "page_dimensions": {
-                            "width": page.rect.width,
-                            "height": page.rect.height
+            # Process each page in the current batch
+            for page_num in range(batch_start, batch_end):
+                page = doc[page_num]
+                
+                try:
+                    # Extract and clean text
+                    text_data = self._extract_page_text(page)
+                    
+                    # Convert to image and process
+                    image = self._convert_page_to_image(page)
+                    vectors = self._process_page(image)
+                    buffered = BytesIO()
+                    image.save(buffered,format="PNG")
+                    # Create point structure for this page
+                    point = models.PointStruct(
+                        id=page_num,
+                        vector=vectors,
+                        payload={
+                            "pdf_path": str(pdf_path),  # Ensure path is string
+                            "page_number": page_num,
+                            "metadata": metadata,
+                            "text_content": text_data,
+                            "page_image": base64.b64encode(buffered.getvalue()).decode(),
+                            "page_dimensions": {
+                                "width": float(page.rect.width),  # Convert to float
+                                "height": float(page.rect.height)
+                            }
                         }
-                    }
-                )]
-            )
+                    )
+                    batch_points.append(point)
+                    
+                except Exception as e:
+                    print(f"Error processing page {page_num}: {str(e)}")
+                    continue
+            
+            # Batch upload to Qdrant
+            if batch_points:
+                try:
+                    self.client.upsert(
+                        collection_name=self.collection_name,
+                        points=batch_points
+                    )
+                    print(f"Processed and uploaded pages {batch_start} to {batch_end-1}")
+                except Exception as e:
+                    print(f"Error uploading batch {batch_start}-{batch_end-1}: {str(e)}")
+                    # Print the first point's payload for debugging
+                    if batch_points:
+                        print("First point payload sample:")
+                        print(batch_points[0].payload)
         
         doc.close()
+
+    def ingest_multiple_pdfs(self, pdf_paths, batch_size=4):
+        """
+        Process multiple PDFs sequentially
+        Args:
+            pdf_paths: List of paths to PDF files
+            batch_size: Number of pages to process at once for each PDF
+        """
+        for pdf_path in pdf_paths:
+            try:
+                print(f"Processing {pdf_path}")
+                self.ingest_pdf(pdf_path, batch_size)
+                print(f"Completed processing {pdf_path}")
+            except Exception as e:
+                print(f"Error processing {pdf_path}: {str(e)}")
+                continue
 
     def search(self, query, limit=10, prefetch_limit=100, score: bool = False):
         """Retuns a string of image data of the matching pages.
@@ -230,19 +295,19 @@ class EagleSearch:
             with_payload=True,
             using="original"
         )
+        return response.points
+        # n=1
+        # if score == False:
+        #     payload = []
 
-        n=1
-        if score == False:
-            payload = []
-
-            for hit in response.points:
-                payload.append( hit.payload["text_content"]["text_html"].split(' src="data:image/jpeg;base64,\n')[1].replace('"','').replace("\n</div>\n","") )
-        else:
-            payload = {}
-            for hit in response.points:
-                payload[hit.payload["text_content"]["text_html"].split(' src="data:image/jpeg;base64,\n')[1].replace('"','').replace("\n</div>\n","")] = hit.score
+        #     for hit in response.points:
+        #         payload.append( hit.payload["text_content"]["text_html"].split(' src="data:image/jpeg;base64,\n')[1].replace('"','').replace("\n</div>\n","") )
+        # else:
+        #     payload = {}
+        #     for hit in response.points:
+        #         payload[hit.payload["text_content"]["text_html"].split(' src="data:image/jpeg;base64,\n')[1].replace('"','').replace("\n</div>\n","")] = hit.score
             
-        return payload
+        # return payload
 
     def base64_to_image(self, base64_string):
         """
