@@ -1,6 +1,12 @@
-C:/Users/User 3/Downloads/Raj Kamal - Embedded Systems Architecture Programming and Design (Scanned Copy)-The McGraw Hill Companies-1-13.pdf_5 : 9.795006
-C:/Users/User 3/Downloads/Raj Kamal - Embedded Systems Architecture Programming and Design (Scanned Copy)-The McGraw Hill Companies-1-13.pdf_7 : 8.832815
-C:/Users/User 3/Downloads/Raj Kamal - Embedded Systems Architecture Programming and Design (Scanned Copy)-The McGraw Hill Companies-1-13.pdf_0 : 8.666279
-C:/Users/User 3/Downloads/grassugo.pdf_124 : 15.2731695
-C:/Users/User 3/Downloads/grassugo.pdf_70 : 14.4860115
-C:/Users/User 3/Downloads/grassugo.pdf_109 : 12.257183
+3f4cab3f-bda8-4fef-a099-fb8a3c7dca52 : 11.146527
+3f4cab3f-bda8-4fef-a099-fb8a3c7dca52 : 10.811605
+3f4cab3f-bda8-4fef-a099-fb8a3c7dca52 : 10.536322
+3f4cab3f-bda8-4fef-a099-fb8a3c7dca52 : 11.744064
+3f4cab3f-bda8-4fef-a099-fb8a3c7dca52 : 11.414682
+3f4cab3f-bda8-4fef-a099-fb8a3c7dca52 : 11.412373
+3f4cab3f-bda8-4fef-a099-fb8a3c7dca52 : 8.938728
+3f4cab3f-bda8-4fef-a099-fb8a3c7dca52 : 8.464641
+3f4cab3f-bda8-4fef-a099-fb8a3c7dca52 : 8.422671
+3f4cab3f-bda8-4fef-a099-fb8a3c7dca52 : 8.593116
+3f4cab3f-bda8-4fef-a099-fb8a3c7dca52 : 8.259666
+3f4cab3f-bda8-4fef-a099-fb8a3c7dca52 : 8.14662

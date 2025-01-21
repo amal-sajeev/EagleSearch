@@ -190,6 +190,8 @@ class EagleSearch:
         
         total_pages = len(doc)
         
+        doc_id = str(uuid.uuid4())
+
         # Process pages in batches
         for batch_start in range(0, total_pages, batch_size):
             batch_end = min(batch_start + batch_size, total_pages)
@@ -213,7 +215,8 @@ class EagleSearch:
                         id= str(uuid.uuid4()),
                         vector=vectors,
                         payload={
-                            "doc_id" : f"{doc.name}_{page_num}",
+                            "doc_id" : doc_id,
+                            "page_id": f"{doc_id}_{page_num}",
                             "pdf_name": doc.name.split("/")[-1],
                             "page_number": page_num,
                             "metadata": metadata,
@@ -296,6 +299,7 @@ class EagleSearch:
             ],
             limit=limit,
             with_payload=True,
+            with_vectors= True,
             using="original"
         )
         # return response.points
