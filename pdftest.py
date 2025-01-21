@@ -10,7 +10,7 @@ cruncher = EagleSearch(qdrant_url ="https://c8abf992-e97b-4ccd-a2b0-046e5c9f5ee5
 
 # cruncher.ingest_pdf("C:/Users/User 3/Downloads/grassugo.pdf", batch_size=5)
 
-hits = cruncher.search("SETI discoveries",limit=3, prefetch_limit= 100)
+hits = cruncher.search("SETI discoveries.",limit=3, prefetch_limit= 100)
 
 # with open("output.txt","a") as out:
 #     out.write(str(hits))

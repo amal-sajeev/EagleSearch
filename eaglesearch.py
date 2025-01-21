@@ -221,7 +221,6 @@ class EagleSearch:
                             "page_number": page_num,
                             "metadata": metadata,
                             "text_content": text_data,
-                            # "page_image": base64.b64encode(buffered.getvalue()).decode(),
                             "page_dimensions": {
                                 "width": float(page.rect.width),  # Convert to float
                                 "height": float(page.rect.height)
