@@ -208,6 +208,7 @@ class EagleSearch:
                     buffered = BytesIO()
                     image.save(buffered,format="PNG")
                     # Create point structure for this page
+                    metadata["page_image"] = base64.b64encode(buffered.getvalue()).decode()
                     point = models.PointStruct(
                         id= str(uuid.uuid4()),
                         vector=vectors,
@@ -217,7 +218,7 @@ class EagleSearch:
                             "page_number": page_num,
                             "metadata": metadata,
                             "text_content": text_data,
-                            "page_image": base64.b64encode(buffered.getvalue()).decode(),
+                            # "page_image": base64.b64encode(buffered.getvalue()).decode(),
                             "page_dimensions": {
                                 "width": float(page.rect.width),  # Convert to float
                                 "height": float(page.rect.height)
@@ -263,7 +264,7 @@ class EagleSearch:
                 print(f"Error processing {pdf_path}: {str(e)}")
                 continue
 
-    def search(self, query, limit=10, prefetch_limit=100, score: bool = False):
+    def search(self, query, limit=10, prefetch_limit=100):
         """Retuns a string of image data of the matching pages.
 
         Args:
@@ -299,17 +300,12 @@ class EagleSearch:
         )
         # return response.points
         n=1
-        if score == False:
-            payload = []
+        payload = []
 
-            for hit in response.points:
-                payload.append( hit.payload["page_image"])
-        else:
-            payload = {}
-            for hit in response.points:
-                payload[hit.payload["page_image"]] = hit.score
-                n+=1
-            
+        for hit in response.points:
+            hit.payload["score"] = hit.score
+            payload.append(hit.payload)
+    
         return payload
 
     def base64_to_image(self, base64_string):
