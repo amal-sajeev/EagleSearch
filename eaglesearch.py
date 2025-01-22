@@ -10,9 +10,10 @@ import base64
 from io import BytesIO
 import uuid
 import tqdm
+from typing import Union, List
 
 class EagleSearch:
-    def __init__(self, qdrant_url, qdrant_api_key, collection_name="pdf_vectors"):
+    def __init__(self, qdrant_url, qdrant_api_key):
         # Initialize VLLM model
         self.model = ColPali.from_pretrained(
             "vidore/colpali-v1.3",
@@ -27,17 +28,14 @@ class EagleSearch:
             url=qdrant_url,
             api_key=qdrant_api_key
         )
-        
-        self.collection_name = collection_name
-        self._setup_collection()
 
-    def _setup_collection(self):
+    def _setup_collection(self, collection_name):
         """Create Qdrant collection if it doesn't exist"""
         try:
-            self.client.get_collection(self.collection_name)
+            self.client.get_collection(collection_name)
         except:
             self.client.create_collection(
-                collection_name=self.collection_name,
+                collection_name=collection_name,
                 vectors_config={
                     "original": models.VectorParams(
                         size=128,
@@ -179,9 +177,13 @@ class EagleSearch:
         }
 
         
-    def ingest_pdf(self, pdf_path, batch_size=4):
+    def ingest_pdf(self, pdf: Union[str,BytesIO], collection_name="", batch_size=4):
         """Process entire PDF and store vectors with batch processing"""
-        doc = fitz.open(pdf_path)
+        self._setup_collection(collection_name)
+        if type(pdf) == type("haha"):
+            doc = fitz.open(pdf)
+        else:
+            doc = fitz.open(stream = pdf.read(), filetype = "pdf")
         metadata = doc.metadata
         
         # Clean metadata
@@ -237,7 +239,7 @@ class EagleSearch:
             if batch_points:
                 try:
                     self.client.upsert(
-                        collection_name=self.collection_name,
+                        collection_name=collection_name,
                         points=batch_points
                     )
                     print(f"Processed and uploaded pages {batch_start} to {batch_end-1}")
@@ -250,23 +252,23 @@ class EagleSearch:
         
         doc.close()
 
-    def ingest_multiple_pdfs(self, pdf_paths, batch_size=4):
+    def ingest_multiple_pdfs(self, pdfs: Union[List[str], List[BytesIO]], batch_size=4):
         """
         Process multiple PDFs sequentially
         Args:
-            pdf_paths: List of paths to PDF files
+            pdfs: Either a list of paths to PDF files or a list of BytesIO objects
             batch_size: Number of pages to process at once for each PDF
         """
-        for pdf_path in pdf_paths:
+        for pdf in pdfs:
             try:
-                print(f"Processing {pdf_path}")
-                self.ingest_pdf(pdf_path, batch_size)
-                print(f"Completed processing {pdf_path}")
+                print(f"Processing {pdf}")
+                self.ingest_pdf(pdf, batch_size)
+                print(f"Completed processing {pdf}")
             except Exception as e:
-                print(f"Error processing {pdf_path}: {str(e)}")
+                print(f"Error processing {pdf}: {str(e)}")
                 continue
 
-    def search(self, query, limit=10, prefetch_limit=100):
+    def search(self, query, limit=10, prefetch_limit=100, collection_name:str=""):
         """Retuns a string of image data of the matching pages.
 
         Args:
@@ -277,12 +279,13 @@ class EagleSearch:
         Returns:
             _type_: _description_
         """
+        self._setup_collection(collection_name)
         processed_query = self.processor.process_queries([query]).to(self.model.device)
         query_embedding = self.model(**processed_query)[0]
         query_embedding = query_embedding.to(torch.float32).detach().cpu().numpy()
         
         response = self.client.query_points(
-            collection_name=self.collection_name,
+            collection_name=collection_name,
             query=query_embedding,
             prefetch=[
                 models.Prefetch(
