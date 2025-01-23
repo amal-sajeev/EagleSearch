@@ -1,6 +1,6 @@
 import fitz  # PyMuPDF for PDF processing
 import torch
-from colpali_engine.models import ColPali, ColPaliProcessor
+from colpali_engine.models import ColQwen2, ColQwen2Processor
 from qdrant_client import QdrantClient, models
 from PIL import Image
 import numpy as np
@@ -15,13 +15,13 @@ from typing import Union, List
 class EagleSearch:
     def __init__(self, qdrant_url, qdrant_api_key):
         # Initialize VLLM model
-        self.model = ColPali.from_pretrained(
-            "vidore/colpali-v1.3",
+        self.model = ColQwen2.from_pretrained(
+            "vidore/colqwen2-v1.0",
             torch_dtype=torch.bfloat16,
             device_map="cuda" if torch.cuda.is_available() else "cpu"
         ).eval()
         
-        self.processor = ColPaliProcessor.from_pretrained("vidore/colpali-v1.3")
+        self.processor = ColQwen2Processor.from_pretrained("vidore/colqwen2-v1.0")
         
         # Initialize Qdrant client
         self.client = QdrantClient(
@@ -156,7 +156,8 @@ class EagleSearch:
         # Get patches dimensions
         x_patches, y_patches = self.processor.get_n_patches(
             image.size,
-            patch_size=self.model.patch_size
+            patch_size=self.model.patch_size,
+            spatial_merge_size= self.model.spatial_merge_size
         )
         
         # Reshape and mean pool
