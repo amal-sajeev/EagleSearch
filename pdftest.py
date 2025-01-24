@@ -11,20 +11,20 @@ cruncher = EagleSearch(qdrant_url ="https://c8abf992-e97b-4ccd-a2b0-046e5c9f5ee5
 # cruncher.ingest_pdf("C:/Users/User 3/Downloads/grassugo.pdf", batch_size=5,collection_name="qwenufo")
 
 # pdf = fitz.open("C:/Users/User 3/Downloads/Payslip_Dec_2024.pdf")
-with open("C:/Users/User 3/Downloads/Payslip_Dec_2024.pdf", "rb") as pdoc:
-    cruncher.ingest_pdf(pdoc,batch_size=5,collection_name="payslip")
+# with open("C:/Users/User 3/Downloads/Payslip_Dec_2024.pdf", "rb") as pdoc:
+#     cruncher.ingest_pdf(pdoc,batch_size=5,collection_name="payslip")
 
-# hits = cruncher.search("pie charts",limit=3, prefetch_limit= 1000, collection_name="qwenufo")
+hits = cruncher.search("pie charts",limit=1, prefetch_limit= 100, collection_name="payslip")
 
 # with open("output.txt","a") as out:
 #     out.write(str(hits))
 
 
-# n=0
-# payload = []
+n=0
+payload = []
 
-# for i in tqdm(hits):
-#     with open("output.txt", "a") as out:
-#         out.write(f"{i["doc_id"]} : {i["score"]}\n")
-#     cruncher.save_image(i["metadata"]["page_image"],f"{n}.png")
-#     n+=1
+for i in tqdm(hits):
+    with open("output.txt", "a") as out:
+        out.write(f"{i["doc_id"]} : {i["score"]}\n")
+    cruncher.save_image(i["metadata"]["page_image"],f"{n}.png")
+    n+=1
