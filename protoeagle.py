@@ -506,7 +506,7 @@ class EagleSearchTXT:
             
             # Optional: Add semantic similarity check
             elif current_chunk and self._compute_max_similarity(embedding, self._cached_embed(''.join(current_chunk))) < similarity_threshold:
-                chunks.append(''.join(current_chunk))
+                chunks.append(''.join(current_chunk))                     d
                 current_chunk = [sentence]
                 current_chunk_size = len(sentence)
             
@@ -548,3 +548,311 @@ class EagleSearchTXT:
         similarities = cosine_similarity([embedding], prev_embeddings)[0]
         return np.max(similarities)
     
+
+import io
+import os
+import xml.etree.ElementTree as ET
+import zipfile
+from typing import List, Dict, Any, Union
+import hashlib
+import re
+
+import torch
+import nltk
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+
+class UniversalDocumentChunker:
+    def __init__(self, 
+                 max_chunk_size: int = 500, 
+                 similarity_threshold: float = 0.3,
+                 embedding_model: str = 'all-MiniLM-L6-v2',
+                 batch_size: int = 32,
+                 max_cache_size: int = 10000):
+        """
+        Comprehensive document chunking utility supporting multiple file types.
+        
+        Args:
+            max_chunk_size (int): Maximum characters per chunk
+            similarity_threshold (float): Semantic similarity threshold
+            embedding_model (str): Sentence embedding model to use
+            batch_size (int): Batch size for embedding computation
+            max_cache_size (int): Maximum number of cached embeddings
+        """
+        # Download necessary NLTK resources
+        nltk.download('punkt', quiet=True)
+        
+        # Device configuration
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
+        # Initialize embedding model
+        self.model = SentenceTransformer(embedding_model).to(self.device)
+        
+        # Chunking parameters
+        self.max_chunk_size = max_chunk_size
+        self.similarity_threshold = similarity_threshold
+        self.batch_size = batch_size
+        
+        # Embedding cache management
+        self.embedding_cache = {}
+        self.max_cache_size = max_cache_size
+        
+        # Precompile regex for efficiency
+        self._whitespace_pattern = re.compile(r'\s+')
+    
+    def _hash_sentence(self, sentence: str) -> str:
+        """
+        Create a stable, consistent hash for sentence caching.
+        
+        Args:
+            sentence (str): Input sentence to hash
+        
+        Returns:
+            str: Consistent hash value for the sentence
+        """
+        # Normalize sentence by removing extra whitespace
+        normalized = self._whitespace_pattern.sub(' ', sentence.strip())
+        return hashlib.md5(normalized.encode('utf-8')).hexdigest()
+    
+    def _cached_embed(self, sentences: List[str]) -> np.ndarray:
+        """
+        Cached embedding with batch processing and GPU acceleration.
+        
+        Cache strategy prevents recomputing embeddings for same sentences.
+        Batch processing reduces overhead of embedding computation.
+        """
+        # Check cache first
+        cache_keys = [self._hash_sentence(s) for s in sentences]
+        cached_embeddings = [self.embedding_cache.get(key) for key in cache_keys]
+        
+        # Identify sentences that need embedding
+        needs_embedding = [
+            (i, s) for i, (s, emb) in enumerate(zip(sentences, cached_embeddings)) 
+            if emb is None
+        ]
+        
+        # Batch embed uncached sentences
+        if needs_embedding:
+            batch_sentences = [s for _, s in needs_embedding]
+            batch_embeddings = self.model.encode(
+                batch_sentences, 
+                batch_size=self.batch_size, 
+                convert_to_numpy=True,
+                device=self.device
+            )
+            
+            # Update cache with LRU (Least Recently Used) eviction
+            for (_, sentence), embedding in zip(needs_embedding, batch_embeddings):
+                key = self._hash_sentence(sentence)
+                self.embedding_cache[key] = embedding
+                
+                # Implement LRU cache eviction
+                if len(self.embedding_cache) > self.max_cache_size:
+                    # Remove oldest entry
+                    oldest_key = next(iter(self.embedding_cache))
+                    del self.embedding_cache[oldest_key]
+        
+        # Retrieve final embeddings (from cache or just computed)
+        return np.array([
+            self.embedding_cache[key] if key in self.embedding_cache else None 
+            for key in cache_keys
+        ])
+    
+    def _split_long_sentences(self, 
+                               sentences: List[str], 
+                               max_size: int) -> List[str]:
+        """
+        Intelligently split sentences longer than chunk size.
+        
+        Args:
+            sentences (List[str]): Input sentences
+            max_size (int): Maximum chunk size
+        
+        Returns:
+            List of sentence chunks
+        """
+        processed_sentences = []
+        
+        for sentence in sentences:
+            if len(sentence) <= max_size:
+                processed_sentences.append(sentence)
+            else:
+                # Split at word boundaries
+                words = sentence.split()
+                current_chunk = []
+                current_chunk_size = 0
+                
+                for word in words:
+                    if current_chunk_size + len(word) + 1 > max_size:
+                        processed_sentences.append(' '.join(current_chunk))
+                        current_chunk = []
+                        current_chunk_size = 0
+                    
+                    current_chunk.append(word)
+                    current_chunk_size += len(word) + 1
+                
+                # Add final chunk
+                if current_chunk:
+                    processed_sentences.append(' '.join(current_chunk))
+        
+        return processed_sentences
+    
+    def extract_text_from_docx(self, docx_path: str) -> str:
+        """
+        Efficiently extract plain text from a .docx file.
+        
+        Args:
+            docx_path (str): Path to the .docx file
+        
+        Returns:
+            str: Extracted plain text with structural preservation
+        """
+        # Use context manager for efficient file handling
+        with zipfile.ZipFile(docx_path) as zip_file:
+            # Directly read XML content
+            xml_content = zip_file.read('word/document.xml')
+            
+            # Efficient XML namespace handling
+            namespace = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+            
+            # Use efficient XML parsing
+            tree = ET.fromstring(xml_content)
+            
+            # Efficient text extraction
+            text_parts = []
+            for para in tree.findall('.//w:p', namespaces=namespace):
+                para_text = [
+                    run.text for run in para.findall('.//w:t', namespaces=namespace) 
+                    if run.text
+                ]
+                
+                # Join paragraph text efficiently
+                full_para = ' '.join(para_text).strip()
+                if full_para:
+                    text_parts.append(f"[PARAGRAPH] {full_para}")
+            
+            return ' '.join(text_parts)
+    
+    def _check_semantic_drift(self, 
+                               current_embedding: np.ndarray, 
+                               chunk_embeddings: List[np.ndarray]) -> bool:
+        """
+        Detect semantic drift using cosine similarity.
+        
+        Args:
+            current_embedding (np.ndarray): Embedding of current sentence
+            chunk_embeddings (List[np.ndarray]): Embeddings in current chunk
+        
+        Returns:
+            bool: Whether semantic drift has occurred
+        """
+        if not chunk_embeddings:
+            return False
+        
+        similarities = cosine_similarity(
+            [current_embedding], 
+            chunk_embeddings
+        )[0]
+        
+        return np.max(similarities) < self.similarity_threshold
+    
+    def chunk_document(self, file_path: str) -> List[Dict[str, Any]]:
+        """
+        Universal document chunking method supporting multiple file types.
+        
+        Args:
+            file_path (str): Path to the document file
+        
+        Returns:
+            List of chunk dictionaries with rich metadata
+        """
+        # Determine file type and extract text
+        file_extension = os.path.splitext(file_path)[1].lower()
+        
+        if file_extension == '.docx':
+            full_text = self.extract_text_from_docx(file_path)
+        elif file_extension == '.txt':
+            with open(file_path, 'r', encoding='utf-8') as file:
+                full_text = file.read()
+        else:
+            raise ValueError(f"Unsupported file type: {file_extension}")
+        
+        # Tokenize sentences
+        sentences = nltk.sent_tokenize(full_text)
+        
+        # Handle long sentences first
+        sentences = self._split_long_sentences(sentences, self.max_chunk_size)
+        
+        # Compute embeddings
+        sentence_embeddings = self._cached_embed(sentences)
+        
+        chunks = []
+        current_chunk = []
+        current_chunk_size = 0
+        current_chunk_embeddings = []
+        
+        for sentence, embedding in zip(sentences, sentence_embeddings):
+            # Size and semantic coherence checks
+            if (current_chunk_size + len(sentence) > self.max_chunk_size or 
+                (current_chunk and self._check_semantic_drift(
+                    embedding, current_chunk_embeddings))):
+                
+                # Create chunk
+                chunk_text = ' '.join(current_chunk)
+                chunks.append({
+                    'text': chunk_text,
+                    'length': len(chunk_text),
+                    'embedding': np.mean(current_chunk_embeddings, axis=0) 
+                        if current_chunk_embeddings else None
+                })
+                
+                # Reset chunk
+                current_chunk = []
+                current_chunk_size = 0
+                current_chunk_embeddings = []
+            
+            # Add current sentence
+            current_chunk.append(sentence)
+            current_chunk_size += len(sentence)
+            current_chunk_embeddings.append(embedding)
+        
+        # Add final chunk
+        if current_chunk:
+            chunk_text = ' '.join(current_chunk)
+            chunks.append({
+                'text': chunk_text,
+                'length': len(chunk_text),
+                'embedding': np.mean(current_chunk_embeddings, axis=0) 
+                    if current_chunk_embeddings else None
+            })
+        
+        return chunks
+
+# Example usage
+def main():
+    chunker = UniversalDocumentChunker(
+        max_chunk_size=500,
+        similarity_threshold=0.3
+    )
+    
+    # Process a .txt file
+    txt_chunks = chunker.chunk_document('path/to/your/document.txt')
+    
+    # Process a .docx file
+    docx_chunks = chunker.chunk_document('path/to/your/document.docx')
+    
+    # Print chunks with their metadata
+    def print_chunks(chunks, file_type):
+        print(f"{file_type.upper()} Document Chunks:")
+        for i, chunk in enumerate(chunks, 1):
+            print(f"Chunk {i}:")
+            print(f"Length: {chunk['length']} characters")
+            print(f"Text Preview: {chunk['text'][:100]}...")
+            print()
+    
+    print_chunks(txt_chunks, 'txt')
+    print_chunks(docx_chunks, 'docx')
+
+if __name__ == "__main__":
+    main()
