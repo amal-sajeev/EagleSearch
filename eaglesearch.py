@@ -710,8 +710,8 @@ class EagleSearch:
                 print(f"Error processing {pdf}: {str(e)}")
                 continue
 
-    def search(self, query, limit=10, prefetch_limit=100, collection_name:str=""):
-        """Retuns a string of image data of the matching pages.
+    def search(self, query, limit=10, prefetch_limit=100, client_id = "", bot_id ="", txt_collection:str = "", img_collection:str=""):
+        """Retuns an array of strings of image data and an array of text of the matching pages.
 
         Args:
             query (_type_): The text content of the query.
@@ -719,15 +719,29 @@ class EagleSearch:
             prefetch_limit (int, optional): Number of results to fetch from the compressed vector data before reranking. Higher means slower. Defaults to 100.
 
         Returns:
-            _type_: _description_
+            img_array: array of pdf pages
+            text_array: array of text extracts as strings
         """
         self._setup_collection(collection_name)
         processed_query = self.processor.process_queries([query]).to(self.model.device)
         query_embedding = self.model(**processed_query)[0]
         query_embedding = query_embedding.to(torch.float32).detach().cpu().numpy()
         
-        response = self.client.query_points(
-            collection_name=collection_name,
+        text_response = self.client.query_points(
+            collection_name = txt_collection,
+            query = query_embedding,
+            query_filter= models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key = "client",
+                    )
+                ]
+            ),
+            using = "txt_vectors"
+        )
+
+        img_response = self.client.query_points(
+            collection_name=img_collection,
             query=query_embedding,
             prefetch=[
                 models.Prefetch(
