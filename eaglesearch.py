@@ -37,11 +37,14 @@ from typing import List, Dict, Any, Union
 class EagleSearch:
        
     def __init__(self, 
+                 qdrant_api_key:int,
+                 qdrant_url : str,
                  max_chunk_size: int = 500, 
                  similarity_threshold: float = 0.3,
                  embedding_model: str = 'all-MiniLM-L6-v2',
                  batch_size: int = 32,
-                 max_cache_size: int = 10000):
+                 max_cache_size: int = 10000,
+                 ):
         """
         Comprehensive document chunking utility supporting multiple file formats.
         
@@ -72,6 +75,22 @@ class EagleSearch:
         
         # Precompile regex for efficiency
         self._whitespace_pattern = re.compile(r'\s+')
+
+         # Initialize VLLM model
+        self.model = ColQwen2.from_pretrained(
+            "vidore/colqwen2-v1.0",
+            torch_dtype=torch.bfloat16,
+            device_map="cuda" if torch.cuda.is_available() else "cpu"
+        ).eval()
+        
+        self.processor = ColQwen2Processor.from_pretrained("vidore/colqwen2-v1.0")
+        
+        # Initialize Qdrant client
+        self.client = QdrantClient(
+            url=qdrant_url,
+            api_key=qdrant_api_key
+        )
+
         
         # Logging configuration
         logging.basicConfig(level=logging.INFO, 
@@ -154,6 +173,68 @@ class EagleSearch:
         except Exception as e:
             self.logger.error(f"Error processing CSV: {e}")
             return ""
+
+    def _check_semantic_drift(self, 
+                               current_embedding: np.ndarray, 
+                               chunk_embeddings: List[np.ndarray]) -> bool:
+        """
+        Detect semantic drift using cosine similarity.
+        
+        Args:
+            current_embedding (np.ndarray): Embedding of current sentence
+            chunk_embeddings (List[np.ndarray]): Embeddings in current chunk
+        
+        Returns:
+            bool: Whether semantic drift has occurred
+        """
+        if not chunk_embeddings:
+            return False
+        
+        similarities = cosine_similarity(
+            [current_embedding], 
+            chunk_embeddings
+        )[0]
+        
+        return np.max(similarities) < self.similarity_threshold
+   
+    def _extract_text_from_docx(self, docx_path: str) -> str:
+        """
+        Efficiently extract plain text from a .docx file.
+        
+        Args:
+            docx_path (str): Path to the .docx file
+        
+        Returns:
+            str: Extracted plain text with structural preservation
+        """
+        # Use context manager for efficient file handling
+        with zipfile.ZipFile(docx_path) as zip_file:
+            # Directly read XML content
+            xml_content = zip_file.read('word/document.xml').decode("utf-8", errors="replace")
+            
+            # Efficient XML namespace handling
+            namespace = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+            
+            #[EXPERIMENTAL] Using a parser to fix UTF-8 errors
+            parser = ET.XMLParser(encoding="UTF-8")
+
+            # Use efficient XML parsing
+            tree = ET.fromstring(xml_content, parser = parser)
+            
+            # Efficient text extraction
+            text_parts = []
+            for para in tree.findall('.//w:p', namespaces=namespace):
+                para_text = [
+                    run.text for run in para.findall('.//w:t', namespaces=namespace) 
+                    if run.text
+                ]
+                
+                # Join paragraph text efficiently
+                full_para = ' '.join(para_text).strip()
+                if full_para:
+                    text_parts.append(full_para)
+            
+            return ' '.join(text_parts)
     
     def _extract_text_from_json(self, file_path: str) -> str:
         """
@@ -300,6 +381,157 @@ class EagleSearch:
         
         return processed_sentences
     
+    def _setup_collection(self, collection_name):
+        """Create Qdrant collection if it doesn't exist"""
+        try:
+            self.client.get_collection(collection_name)
+        except:
+            self.client.create_collection(
+                collection_name=collection_name,
+                vectors_config={
+                    "original": models.VectorParams(
+                        size=128,
+                        distance=models.Distance.COSINE,
+                        multivector_config=models.MultiVectorConfig(
+                            comparator=models.MultiVectorComparator.MAX_SIM
+                        ),
+                        hnsw_config=models.HnswConfigDiff(m=0)  # Disable HNSW for original vectors
+                    ),
+                    "mean_pooling_columns": models.VectorParams(
+                        size=128,
+                        distance=models.Distance.COSINE,
+                        multivector_config=models.MultiVectorConfig(
+                            comparator=models.MultiVectorComparator.MAX_SIM
+                        )
+                    ),
+                    "mean_pooling_rows": models.VectorParams(
+                        size=128,
+                        distance=models.Distance.COSINE,
+                        multivector_config=models.MultiVectorConfig(
+                            comparator=models.MultiVectorComparator.MAX_SIM
+                        )
+                    )
+                }
+            )
+
+    def _clean_text_data(self, text_data):
+        """Clean text data to ensure it's JSON serializable"""
+        if isinstance(text_data, str):
+            # Replace or remove invalid characters
+            return text_data.encode('utf-8', errors='ignore').decode('utf-8')
+        elif isinstance(text_data, dict):
+            return {k: self._clean_text_data(v) for k, v in text_data.items()}
+        elif isinstance(text_data, list):
+            return [self._clean_text_data(item) for item in text_data]
+        else:
+            return text_data
+
+    def _extract_page_text(self, page):
+        """Extract text from a PDF page with encoding error handling"""
+        try:
+
+            # Get text with HTML formatting
+            text_html = page.get_text("html")
+
+            # Get plain text
+            text_plain = page.get_text("text", sort=True)
+            
+            # Get text blocks with position information
+            blocks = page.get_text("blocks")
+            structured_blocks = []
+            
+            for b in blocks:
+                # Each block contains: (x0, y0, x1, y1, "text", block_no, block_type)
+                structured_blocks.append({
+                    "bbox": (b[0], b[1], b[2], b[3]),
+                    "text": b[4],
+                    "block_no": b[5],
+                    "block_type": b[6]  # 0=text, 1=image, etc.
+                })
+            
+            # Get text in JSON format with detailed layout info
+            text_dict = page.get_text("dict")
+
+            text_data = {
+            "text_plain": text_plain,
+            "text_html": text_html,
+            "blocks": structured_blocks
+        }
+            
+            # Clean the text data
+            return(self._clean_text_data(text_data))
+            
+        except Exception as e:
+            print(f"Error extracting text: {str(e)}")
+            return {"text_plain": "", "blocks": []}
+            
+    def _convert_page_to_image(self, page):
+        """Alternative method to convert PDF page to PIL Image"""
+        try:
+            # First attempt - direct conversion
+            zoom = 2
+            matrix = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=matrix, alpha=False)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            return img
+        except Exception as e:
+            print(f"Direct conversion failed: {e}")
+            try:
+                # Second attempt - using temporary PNG
+                zoom = 2
+                matrix = fitz.Matrix(zoom, zoom)
+                pix = page.get_pixmap(matrix=matrix)
+                
+                # Save to bytes buffer
+                buffer = io.BytesIO()
+                pix.save(buffer, "png")
+                buffer.seek(0)
+                
+                # Open with PIL
+                img = Image.open(buffer)
+                return img.convert('RGB')
+            except Exception as e:
+                print(f"Alternative conversion failed: {e}")
+                raise ValueError(f"Could not convert page to image: {e}")
+
+    def _process_page(self, image):
+        """Generate vectors for a single page"""
+        processed_image = self.processor.process_images([image])
+        image_embeddings = self.model(**processed_image)
+        
+        # Get first embedding (batch size 1)
+        image_embedding = image_embeddings[0]
+        
+        # Identify image tokens
+        mask = processed_image.input_ids[0] == self.processor.image_token_id
+        
+        # Get patches dimensions
+        x_patches, y_patches = self.processor.get_n_patches(
+            image.size,
+            patch_size=self.model.patch_size,
+            spatial_merge_size= self.model.spatial_merge_size
+        )
+        
+        # Reshape and mean pool
+        image_tokens = image_embedding[mask].view(x_patches, y_patches, self.model.dim)
+        pooled_by_rows = image_tokens.mean(dim=0)
+        pooled_by_columns = image_tokens.mean(dim=1)
+        
+        # Add special tokens back
+        non_image_embeddings = image_embedding[~mask]
+        pooled_by_rows = torch.cat([pooled_by_rows, non_image_embeddings])
+        pooled_by_columns = torch.cat([pooled_by_columns, non_image_embeddings])
+        
+        # Convert to float32 before converting to numpy
+        return {
+            "original": image_embedding.to(torch.float32).detach().cpu().numpy(),
+            "mean_pooling_rows": pooled_by_rows.to(torch.float32).detach().cpu().numpy(),
+            "mean_pooling_columns": pooled_by_columns.to(torch.float32).detach().cpu().numpy()
+        }
+
+        
+
+
     def chunk_document(self, file_path: str) -> List[Dict[str, Any]]:
         """
         Universal document chunking method supporting multiple file types.
@@ -362,9 +594,7 @@ class EagleSearch:
                 chunk_text = ' '.join(current_chunk)
                 chunks.append({
                     'text': chunk_text,
-                    'length': len(chunk_text),
-                    'embedding': np.mean(current_chunk_embeddings, axis=0) 
-                        if current_chunk_embeddings else None
+                    'length': len(chunk_text)
                 })
                 
                 # Reset chunk
@@ -382,45 +612,10 @@ class EagleSearch:
             chunk_text = ' '.join(current_chunk)
             chunks.append({
                 'text': chunk_text,
-                'length': len(chunk_text),
-                'embedding': np.mean(current_chunk_embeddings, axis=0) 
-                    if current_chunk_embeddings else None
+                'length': len(chunk_text)
             })
         
         return chunks
 
-# Example usage
-def main():
-    chunker = ComprehensiveDocumentChunker(
-        max_chunk_size=500,
-        similarity_threshold=0.3
-    )
-    
-    # List of file types to process
-    file_types = [
-        'document.txt', 
-        'document.docx', 
-        'document.md', 
-        'document.csv', 
-        'document.json', 
-        'document.html', 
-        'document.xml', 
-        'document.epub', 
-        'document.log'
-    ]
-    
-    # Process each file type
-    for file_type in file_types:
-        try:
-            chunks = chunker.chunk_document(file_type)
-            print(f"\n{file_type.upper()} Chunks:")
-            for i, chunk in enumerate(chunks, 1):
-                print(f"Chunk {i}:")
-                print(f"Length: {chunk['length']} characters")
-                print(f"Text Preview: {chunk['text'][:100]}...")
-                print()
-        except Exception as e:
-            print(f"Error processing {file_type}: {e}")
+    # PDF Processing code
 
-if __name__ == "__main__":
-    main()
