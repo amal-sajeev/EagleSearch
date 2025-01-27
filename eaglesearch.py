@@ -9,6 +9,7 @@ import re
 import uuid
 import xml.etree.ElementTree as ET
 import zipfile
+from io import BytesIO
 
 import ebooklib
 from ebooklib import epub
@@ -618,4 +619,174 @@ class EagleSearch:
         return chunks
 
     # PDF Processing code
+    def ingest(self, pdf: Union[str,BytesIO], collection_name="", batch_size=4):
+        """Process entire PDF and store vectors with batch processing"""
+        self._setup_collection(collection_name)
+        if type(pdf) == type("haha"):
+            doc = fitz.open(pdf)
+        else:
+            doc = fitz.open(stream = pdf.read(), filetype = "pdf")
+        metadata = doc.metadata
+        
+        # Clean metadata
+        if metadata:
+            metadata = self._clean_text_data(metadata)
+        
+        total_pages = len(doc)
+        
+        doc_id = str(uuid.uuid4())
 
+        # Process pages in batches
+        for batch_start in range(0, total_pages, batch_size):
+            batch_end = min(batch_start + batch_size, total_pages)
+            batch_points = []
+            
+            # Process each page in the current batch
+            for page_num in range(batch_start, batch_end):
+                page = doc[page_num]
+                
+                try:
+                    # Extract and clean text
+                    text_data = self._extract_page_text(page)
+                    # Convert to image and process
+                    image = self._convert_page_to_image(page)
+                    vectors = self._process_page(image)
+                    buffered = BytesIO()
+                    image.save(buffered,format="PNG")
+                    # Create point structure for this page
+                    metadata["page_image"] = base64.b64encode(buffered.getvalue()).decode()
+                    point = models.PointStruct(
+                        id= str(uuid.uuid4()),
+                        vector=vectors,
+                        payload={
+                            "doc_id" : doc_id,
+                            "page_id": f"{doc_id}_{page_num}",
+                            "pdf_name": doc.name.split("/")[-1],
+                            "page_number": page_num,
+                            "metadata": metadata,
+                            "text_content": text_data,
+                            "page_dimensions": {
+                                "width": float(page.rect.width),
+                                "height": float(page.rect.height)
+                            }
+                        }
+                    )
+                    batch_points.append(point)
+                    
+                except Exception as e:
+                    print(f"Error processing page {page_num}: {str(e)}")
+                    continue
+            
+            # Batch upload to Qdrant
+            if batch_points:
+                try:
+                    self.client.upsert(
+                        collection_name=collection_name,
+                        points=batch_points
+                    )
+                    print(f"Processed and uploaded pages {batch_start} to {batch_end-1}")
+                except Exception as e:
+                    print(f"Error uploading batch {batch_start}-{batch_end-1}: {str(e)}")
+                    # Print the first point's payload for debugging
+                    if batch_points:
+                        print("First point payload sample:")
+                        print(batch_points[0].payload)
+        
+        doc.close()
+
+    def ingest_multiple_pdfs(self, pdfs: Union[List[str], List[BytesIO]], batch_size=4):
+        """
+        Process multiple PDFs sequentially
+        Args:
+            pdfs: Either a list of paths to PDF files or a list of BytesIO objects
+            batch_size: Number of pages to process at once for each PDF
+        """
+        for pdf in pdfs:
+            try:
+                print(f"Processing {pdf}")
+                self.ingest_pdf(pdf, batch_size)
+                print(f"Completed processing {pdf}")
+            except Exception as e:
+                print(f"Error processing {pdf}: {str(e)}")
+                continue
+
+    def search(self, query, limit=10, prefetch_limit=100, collection_name:str=""):
+        """Retuns a string of image data of the matching pages.
+
+        Args:
+            query (_type_): The text content of the query.
+            limit (int, optional): Number of results to return. Defaults to 10.
+            prefetch_limit (int, optional): Number of results to fetch from the compressed vector data before reranking. Higher means slower. Defaults to 100.
+
+        Returns:
+            _type_: _description_
+        """
+        self._setup_collection(collection_name)
+        processed_query = self.processor.process_queries([query]).to(self.model.device)
+        query_embedding = self.model(**processed_query)[0]
+        query_embedding = query_embedding.to(torch.float32).detach().cpu().numpy()
+        
+        response = self.client.query_points(
+            collection_name=collection_name,
+            query=query_embedding,
+            prefetch=[
+                models.Prefetch(
+                    query=query_embedding,
+                    limit=prefetch_limit,
+                    using="mean_pooling_columns"
+                ),
+                models.Prefetch(
+                    query=query_embedding,
+                    limit=prefetch_limit,
+                    using="mean_pooling_rows"
+                ),
+            ],
+            limit=limit,
+            with_payload=True,
+            using="original"
+        )
+        # return response.points
+        n=1
+        payload = []
+
+        for hit in response.points:
+            hit.payload["score"] = hit.score
+            payload.append(hit.payload)
+    
+        return payload
+
+    # BYTE TO IMAGE CONVERSION FUNCTIONS ======================================================================
+
+    def base64_to_image(self, base64_string):
+        """
+        Convert a base64 string to an image file
+        
+        Parameters:
+        base64_string (str): The base64 encoded image string
+        
+        Returns:
+        PIL.Image: The decoded image
+        """
+        # Remove the data URL prefix if it exists
+        if ',' in base64_string:
+            base64_string = base64_string.split(',')[1]
+        
+        # Decode the base64 string
+        img_data = base64.b64decode(base64_string)
+        
+        # Create an image object from the decoded data
+        img = Image.open(io.BytesIO(img_data))
+        
+        return img
+
+    # Example usage:
+    def save_image(self,base64_string, output_path):
+            """
+            Convert base64 string to image and save to file
+            
+            Parameters:
+            base64_string (str): The base64 encoded image string
+            output_path (str): Path where the image should be saved
+            """
+            img = self.base64_to_image(base64_string)
+            img.save(output_path)

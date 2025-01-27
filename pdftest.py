@@ -27,4 +27,5 @@ for i in tqdm(hits):
     with open("output.txt", "a") as out:
         out.write(f"{i["doc_id"]} : {i["score"]}\n")
     cruncher.save_image(i["metadata"]["page_image"],f"{n}.png")
-    n+=1
+    n+=1 
+    

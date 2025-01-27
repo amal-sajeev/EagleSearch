@@ -506,7 +506,7 @@ class EagleSearchTXT:
             
             # Optional: Add semantic similarity check
             elif current_chunk and self._compute_max_similarity(embedding, self._cached_embed(''.join(current_chunk))) < similarity_threshold:
-                chunks.append(''.join(current_chunk))                     d
+                chunks.append(''.join(current_chunk))
                 current_chunk = [sentence]
                 current_chunk_size = len(sentence)
             
