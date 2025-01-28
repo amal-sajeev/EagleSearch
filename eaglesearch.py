@@ -78,7 +78,7 @@ class EagleSearch:
         self._whitespace_pattern = re.compile(r'\s+')
 
          # Initialize VLLM model
-        self.model = ColQwen2.from_pretrained(
+        self.colmodel = ColQwen2.from_pretrained(
             "vidore/colqwen2-v1.0",
             torch_dtype=torch.bfloat16,
             device_map="cuda" if torch.cuda.is_available() else "cpu"
@@ -148,7 +148,7 @@ class EagleSearch:
         """
         with open(file_path, 'r', encoding='utf-8') as file:
             # Convert Markdown to HTML, then extract text
-            md_text = file.read()
+            md_text = file.read().decode("utf-8", errors="replace")
             html = markdown.markdown(md_text)
             soup = BeautifulSoup(html, 'html.parser')
             return soup.get_text()
@@ -165,7 +165,7 @@ class EagleSearch:
         """
         try:
             # Read CSV file
-            df = pd.read_csv(file_path)
+            df = pd.read_csv(file_path).decode("utf-8", errors="replace")
             
             # Convert all columns to string and concatenate
             text_content = ' '.join(df.apply(lambda row: ' '.join(row.astype(str)), axis=1))
@@ -237,33 +237,61 @@ class EagleSearch:
             
             return ' '.join(text_parts)
     
-    def _extract_text_from_json(self, file_path: str) -> str:
+    def _extract_text_from_json(self, file_path) -> list[str]:
         """
-        Extract text from JSON file.
+        Extract text from JSON file with embedding-optimized context formatting.
         
         Args:
             file_path (str): Path to the JSON file
         
         Returns:
-            str: Extracted text from JSON
+            list[str]: List of extracted text chunks with context prefixes
         """
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
                 data = json.load(file)
                 
-                # Recursively extract text from nested structures
-                def extract_text_from_json(obj):
-                    if isinstance(obj, dict):
-                        return ' '.join(extract_text_from_json(v) for v in obj.values())
-                    elif isinstance(obj, list):
-                        return ' '.join(extract_text_from_json(item) for item in obj)
-                    else:
-                        return str(obj)
+                text_chunks = []
                 
-                return extract_text_from_json(data)
+                def extract_text_with_context(obj, context=None):
+                    if context is None:
+                        context = []
+                    
+                    if isinstance(obj, dict):
+                        for key, value in obj.items():
+                            if key.lower() in ['length', 'id', 'index']:
+                                continue
+                                
+                            new_context = context.copy()
+                            
+                            # Simplify context labels and handle special fields
+                            if key.lower() == 'title':
+                                new_context.append(f"TITLE: {value}")
+                            elif key.lower() == 'year':
+                                new_context.append(f"YEAR: {value}")
+                            elif key.lower() in ['genre', 'subgenre']:
+                                new_context.append(f"CATEGORY: {value}" if isinstance(value, str) else key.upper())
+                            
+                            if isinstance(value, (dict, list)):
+                                extract_text_with_context(value, new_context)
+                            elif isinstance(value, str) and len(value.strip()) > 0:
+                                # Format context in a way that embedding models can understand
+                                context_str = ' | '.join(new_context)
+                                if context_str:
+                                    text_chunks.append(f"CONTEXT: {context_str} CONTENT: {value}")
+                                else:
+                                    text_chunks.append(value)
+                                
+                    elif isinstance(obj, list):
+                        for item in obj:
+                            extract_text_with_context(item, context)
+                
+                extract_text_with_context(data)
+                return text_chunks
+                
         except Exception as e:
             self.logger.error(f"Error processing JSON: {e}")
-            return ""
+            return []
     
     def _extract_text_from_html(self, file_path: str) -> str:
         """
@@ -276,7 +304,7 @@ class EagleSearch:
             str: Extracted plain text
         """
         with open(file_path, 'r', encoding='utf-8') as file:
-            soup = BeautifulSoup(file.read(), 'html.parser')
+            soup = BeautifulSoup(file.read().decode("utf-8", errors="replace"), 'html.parser')
             return soup.get_text()
     
     def _extract_text_from_xml(self, file_path: str) -> str:
@@ -339,7 +367,8 @@ class EagleSearch:
         """
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
-                return file.read()
+                return file.read().decode("utf-8", errors="replace")
+
         except Exception as e:
             self.logger.error(f"Error processing log file: {e}")
             return ""
@@ -498,7 +527,7 @@ class EagleSearch:
     def _process_page(self, image):
         """Generate vectors for a single page"""
         processed_image = self.processor.process_images([image])
-        image_embeddings = self.model(**processed_image)
+        image_embeddings = self.colmodel(**processed_image)
         
         # Get first embedding (batch size 1)
         image_embedding = image_embeddings[0]
@@ -509,12 +538,12 @@ class EagleSearch:
         # Get patches dimensions
         x_patches, y_patches = self.processor.get_n_patches(
             image.size,
-            patch_size=self.model.patch_size,
-            spatial_merge_size= self.model.spatial_merge_size
+            patch_size=self.colmodel.patch_size,
+            spatial_merge_size= self.colmodel.spatial_merge_size
         )
         
         # Reshape and mean pool
-        image_tokens = image_embedding[mask].view(x_patches, y_patches, self.model.dim)
+        image_tokens = image_embedding[mask].view(x_patches, y_patches, self.colmodel.dim)
         pooled_by_rows = image_tokens.mean(dim=0)
         pooled_by_columns = image_tokens.mean(dim=1)
         
@@ -548,7 +577,7 @@ class EagleSearch:
         
         # Text extraction mapping
         extraction_methods = {
-            '.txt': lambda path: open(path, 'r', encoding='utf-8').read(),
+            '.txt': lambda path: open(path, 'r', encoding='utf-8').read().decode("utf-8", errors="replace"),
             '.docx': self._extract_text_from_docx,
             '.md': self._extract_text_from_markdown,
             '.csv': self._extract_text_from_csv,
@@ -563,18 +592,21 @@ class EagleSearch:
         try:
             text_extractor = extraction_methods.get(file_extension)
             if text_extractor:
-                full_text = text_extractor(file_path)
+                full_text = text_extractor(file_path)   
             else:
                 raise ValueError(f"Unsupported file type: {file_extension}")
         except Exception as e:
             self.logger.error(f"Error extracting text: {e}")
             return []
         
-        # Tokenize sentences
-        sentences = nltk.sent_tokenize(full_text)
-        
-        # Handle long sentences
-        sentences = self._split_long_sentences(sentences, self.max_chunk_size)
+        sentences = full_text
+        if file_extension != ".json":
+            # Tokenize sentences
+            
+            sentences = nltk.sent_tokenize(str(full_text))
+            
+            # Handle long sentences
+            sentences = self._split_long_sentences(sentences, self.max_chunk_size)
         
         # Compute embeddings
         sentence_embeddings = self._cached_embed(sentences)
@@ -618,8 +650,8 @@ class EagleSearch:
         
         return chunks
 
-    # PDF Processing code
-    def ingest(self, pdf: Union[str,BytesIO], collection_name="", batch_size=4):
+    # Embedding and uploading pdf pages
+    def ingest_pdf(self, pdf: Union[str,BytesIO], collection_name="", batch_size=4):
         """Process entire PDF and store vectors with batch processing"""
         self._setup_collection(collection_name)
         if type(pdf) == type("haha"):
@@ -694,7 +726,7 @@ class EagleSearch:
         
         doc.close()
 
-    def ingest_multiple_pdfs(self, pdfs: Union[List[str], List[BytesIO]], batch_size=4):
+    def ingest_multiple_pdfs(self, pdfs: Union[List[str], List[BytesIO]], collection_name: str = "", batch_size: str = 4):
         """
         Process multiple PDFs sequentially
         Args:
@@ -709,6 +741,17 @@ class EagleSearch:
             except Exception as e:
                 print(f"Error processing {pdf}: {str(e)}")
                 continue
+                
+    def ingest_text(self, files: Union[str,BytesIO], collection_name: str = "", batch_size: str = 4):
+        """Process chunked text into embedded vectors with ColQwen and upload the vectors.
+
+        Args:
+            text (List): Text chunks to embed.
+            batch_size (int, optional): Batch size for parallel uploading. Defaults to 4.
+        """
+        self._setup_collection(collection_name)
+        # if type(files) == type("hehe"):
+        #     text = 
 
     def search(self, query, limit=10, prefetch_limit=100, client_id = "", bot_id ="", txt_collection:str = "", img_collection:str=""):
         """Retuns an array of strings of image data and an array of text of the matching pages.
@@ -724,9 +767,12 @@ class EagleSearch:
         """
         self._setup_collection(collection_name)
         processed_query = self.processor.process_queries([query]).to(self.model.device)
-        query_embedding = self.model(**processed_query)[0]
+        query_embedding = self.colmodel(**processed_query)[0]
         query_embedding = query_embedding.to(torch.float32).detach().cpu().numpy()
         
+        #crafting the query filter for client and bot
+        query
+
         text_response = self.client.query_points(
             collection_name = txt_collection,
             query = query_embedding,
@@ -734,6 +780,9 @@ class EagleSearch:
                 must=[
                     models.FieldCondition(
                         key = "client",
+                        match = models.MatchValue(
+                            value= client_id
+                        )
                     )
                 ]
             ),
