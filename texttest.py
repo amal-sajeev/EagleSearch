@@ -13,7 +13,8 @@ with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-databas
     
     print(BytesIO(file.read()).read())
 
-# nuchunks = txtchunker.chunk_document("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json")
-# with open("dynamicoutput.txt","w") as textcheck:
-#     for i in nuchunks:
-#         textcheck.write(str(i)+"\n")
+nuchunks = txtchunker.chunk_document("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json")
+with open("dynamicoutput.txt","w") as textcheck:
+    for i in nuchunks:
+        textcheck.write(str(i)+"\n")
+        pprint.pprint(i)

@@ -1,75 +1,124 @@
 {
-  "movieDatabase": {
-    "description": "This comprehensive database contains a curated collection of influential films spanning multiple decades, genres, and cultural impacts. Each entry has been carefully researched and documented to provide context about the movie's significance in cinema history, its technical achievements, and its lasting influence on popular culture.",
-    "categories": {
-      "genres": {
-        "scienceFiction": {
-          "description": "Science fiction films have consistently pushed the boundaries of both storytelling and visual effects, challenging audiences to imagine possible futures and alternative realities. From early works like Méliès' 'A Trip to the Moon' to modern blockbusters, this genre has been at the forefront of cinematic innovation.",
-          "subgenres": {
-            "cyberpunk": {
-              "description": "Cyberpunk films explore the intersection of advanced technology and societal decay, often featuring dystopian futures where mega-corporations dominate and the line between human and machine becomes increasingly blurred. These narratives frequently question the nature of consciousness and identity in an age of digital transformation.",
-              "films": [
-                {
-                  "title": "Blade Runner",
-                  "year": 1982,
-                  "analysis": "Ridley Scott's masterpiece redefined the visual language of science fiction cinema, blending film noir aesthetics with futuristic elements to create a uniquely atmospheric portrayal of a rain-soaked, neon-lit Los Angeles. The film's exploration of what it means to be human through the lens of artificial beings known as replicants has only become more relevant with advances in AI and biotechnology.",
-                  "awards": ["BAFTA Award for Best Cinematography", "Hugo Award for Best Dramatic Presentation"],
-                  "keyThemes": ["Identity", "Humanity", "Memory", "Consciousness"]
-                },
-                {
-                  "title": "Ghost in the Shell",
-                  "year": 1995,
-                  "analysis": "This landmark animated film delves deep into questions of consciousness and identity in a fully networked society, presenting a future where the boundary between human and machine consciousness has become almost indistinguishable. Its visual style and philosophical themes have influenced countless subsequent works in both animation and live-action cinema.",
-                  "awards": ["Animation Kobe Feature Film Award"],
-                  "keyThemes": ["Consciousness", "Technology", "Identity", "Artificial Intelligence"]
+  "artistInfo": {
+    "name": "Michael Jackson",
+    "biography": "Michael Jackson, known as the 'King of Pop', revolutionized popular music through his distinctive voice, innovative dance moves, and groundbreaking music videos. His career spanned over four decades, beginning with the Jackson 5 and evolving into one of the most successful solo careers in music history.",
+    "soloDiscography": {
+      "studioAlbums": {
+        "offTheWall": {
+          "title": "Off the Wall",
+          "releaseYear": 1979,
+          "description": "Off the Wall marked Jackson's emergence as a solo adult artist, establishing him as a groundbreaking force in R&B and pop music. The album's sophisticated fusion of disco, funk, pop, and soul created a new template for contemporary pop music.",
+          "tracks": {
+            "dontStopTillYouGetEnough": {
+              "title": "Don't Stop 'Til You Get Enough",
+              "length": "6:05",
+              "significance": "This track marked Jackson's first solo recording where he used his distinctive vocal hiccups and falsetto voice. The song's infectious groove and innovative use of string arrangements set new standards for disco-pop fusion.",
+              "production": {
+                "producer": "Quincy Jones",
+                "recordingDetails": "The song's distinctive opening whispered monologue was recorded in a darkened studio to help Jackson overcome his initial shyness about recording alone. The complex string arrangements were inspired by Philadelphia soul music.",
+                "musicalElements": {
+                  "strings": "Complex orchestral arrangements by Ben Wright",
+                  "percussion": "Multiple layers of Latin and African instruments",
+                  "vocals": "Groundbreaking use of vocal hiccups and falsetto",
+                  "mixing": "Revolutionary use of dynamic range compression"
                 }
-              ]
+              }
+            }
+          }
+        },
+        "thriller": {
+          "title": "Thriller",
+          "releaseYear": 1982,
+          "description": "Thriller became the best-selling album of all time, revolutionizing the music industry through its groundbreaking blend of pop, rock, and R&B. The album's success was amplified by its innovative music videos, particularly the title track's horror-themed short film.",
+          "tracks": {
+            "billyJean": {
+              "title": "Billie Jean",
+              "length": "4:54",
+              "significance": "The song's iconic bassline and revolutionary music video, featuring the debut of Jackson's moonwalk, helped break racial barriers on MTV. The track tells a personal story about a fan claiming Jackson fathered her child.",
+              "production": {
+                "producer": "Quincy Jones",
+                "recordingDetails": "The distinctive bassline took weeks to mix properly, with Jackson insisting on over 90 mixes before approving the final version. The song's unique sonic character came from recording the bass and drums on special audio tape to achieve a particular sound quality.",
+                "musicalElements": {
+                  "bassline": "Created by session musician Paul Jackson Jr.",
+                  "drumPattern": "Based on a modified disco beat",
+                  "vocals": "Multiple layers of Jackson's vocals were recorded to create depth",
+                  "mixing": "The final mix took over 90 attempts to perfect"
+                }
+              }
             },
-            "spaceOpera": {
-              "description": "Space opera films combine grand, sweeping narratives with cosmic settings, typically featuring interstellar travel, epic conflicts between civilizations, and themes of destiny and discovery. This subgenre often blends elements of fantasy with science fiction, creating rich universes filled with diverse species and advanced technologies.",
-              "films": [
-                {
-                  "title": "Dune",
-                  "year": 2021,
-                  "analysis": "Denis Villeneuve's adaptation of Frank Herbert's seminal novel brings a sense of majesty and scale to the screen while maintaining intimate character focus. The film's approach to world-building sets new standards for the genre, using visual storytelling to convey complex political and ecological themes without overwhelming the audience with exposition.",
-                  "awards": ["Academy Award for Best Cinematography", "Academy Award for Best Visual Effects"],
-                  "keyThemes": ["Politics", "Ecology", "Religion", "Destiny"]
+            "thriller": {
+              "title": "Thriller",
+              "length": "5:57",
+              "significance": "The music video revolutionized the medium, setting new standards for production values and storytelling in music videos. The song's horror theme and Vincent Price's rap break created a unique fusion of pop and horror elements.",
+              "production": {
+                "producer": "Quincy Jones",
+                "recordingDetails": "The iconic horror sound effects were created using a mixture of authentic sound library effects and custom recordings. Vincent Price's rap was recorded in two takes.",
+                "musicalElements": {
+                  "soundEffects": "Combination of synthesized and natural sounds",
+                  "horns": "Complex brass arrangements creating tension",
+                  "narrative": "Vincent Price's spoken word section",
+                  "percussion": "Layered drums creating supernatural atmosphere"
                 }
-              ]
+              }
             }
           }
         },
-        "drama": {
-          "description": "Drama films focus on emotional and relational tensions between characters, exploring the depths of human experience and social interactions. These films often tackle complex themes and moral dilemmas, serving as mirrors to society and the human condition.",
-          "subgenres": {
-            "periodDrama": {
-              "description": "Period dramas transport audiences to specific historical eras, combining meticulous attention to historical detail with compelling narrative storytelling. These films often explore how past events and social conditions continue to resonate with contemporary audiences through universal themes and experiences.",
-              "films": [
-                {
-                  "title": "The Favourite",
-                  "year": 2018,
-                  "analysis": "Yorgos Lanthimos's darkly comic period piece subverts traditional costume drama tropes while offering a biting commentary on power, love, and manipulation in the royal court. The film's unconventional cinematography and sardonic tone bring a fresh perspective to historical storytelling, making the past feel immediately relevant and viscerally alive.",
-                  "awards": ["Academy Award for Best Actress", "BAFTA Award for Outstanding British Film"],
-                  "keyThemes": ["Power", "Love", "Class", "Gender Politics"]
+        "bad": {
+          "title": "Bad",
+          "releaseYear": 1987,
+          "description": "Bad was the first album in history to generate five Billboard Hot 100 number-one singles. The album marked Jackson's final collaboration with producer Quincy Jones and represented a harder, edgier sound compared to his previous works.",
+          "tracks": {
+            "smoothCriminal": {
+              "title": "Smooth Criminal",
+              "length": "4:17",
+              "significance": "Famous for its innovative dance routine featuring the anti-gravity lean, which required special shoes that Jackson patented. The song's complex arrangement and intricate rhythms showcased Jackson's evolving musical sophistication.",
+              "production": {
+                "producer": "Michael Jackson",
+                "recordingDetails": "The track's distinctive sound came from layering multiple synthesizer parts and incorporating orchestral elements. The anti-gravity lean seen in the music video required special boots that Jackson helped design and patent.",
+                "musicalElements": {
+                  "synths": "Multiple layers creating the dramatic atmosphere",
+                  "percussion": "Complex Latin-influenced rhythms",
+                  "vocals": "Aggressive, staccato delivery style",
+                  "arrangement": "Incorporation of orchestral elements"
                 }
-              ]
+              }
+            },
+            "manInTheMirror": {
+              "title": "Man in the Mirror",
+              "length": "5:19",
+              "significance": "This socially conscious anthem became one of Jackson's most powerful statements on personal responsibility and global change. The song features one of the most memorable key changes in pop music history.",
+              "production": {
+                "producer": "Michael Jackson & Quincy Jones",
+                "recordingDetails": "The track features the Andraé Crouch Choir, marking one of the first major uses of a gospel choir in a pop song. The key change was specifically designed to create an emotional climax.",
+                "musicalElements": {
+                  "choir": "Full gospel choir arrangement",
+                  "synthesizers": "Layered Yamaha DX7 sounds",
+                  "structure": "Innovative use of dynamic build-up",
+                  "vocals": "Complex harmonies with choir integration"
+                }
+              }
             }
           }
         },
-        "horror": {
-          "description": "Horror films tap into primal fears and societal anxieties, using supernatural, psychological, or realistic threats to explore the darker aspects of human nature and experience. The genre has evolved from simple shock tactics to complex examinations of social issues and psychological trauma.",
-          "subgenres": {
-            "psychological": {
-              "description": "Psychological horror focuses on mental, emotional, and psychological states to create fear, often blurring the line between reality and imagination. These films typically emphasize atmosphere and tension over explicit violence, delving deep into characters' psyches and paranoia.",
-              "films": [
-                {
-                  "title": "The Babadook",
-                  "year": 2014,
-                  "analysis": "Jennifer Kent's debut feature masterfully weaves together supernatural horror with an affecting portrayal of grief and maternal struggle. The film's sophisticated approach to genre conventions creates a deeply personal story that works both as a straightforward horror film and as an allegory for dealing with loss and depression.",
-                  "awards": ["AACTA Award for Best Film", "Empire Award for Best Horror"],
-                  "keyThemes": ["Grief", "Parenthood", "Mental Health", "Trauma"]
+        "dangerous": {
+          "title": "Dangerous",
+          "releaseYear": 1991,
+          "description": "Dangerous marked Jackson's transition into the 1990s, incorporating new jack swing and R&B elements while maintaining his signature pop sound. The album showcased Jackson's ability to evolve with changing musical trends while maintaining his artistic integrity.",
+          "tracks": {
+            "blackOrWhite": {
+              "title": "Black or White",
+              "length": "4:16",
+              "significance": "The song's message of racial harmony and groundbreaking morphing special effects in the music video made it a defining moment in music video history. The track blended rock elements with Jackson's pop style.",
+              "production": {
+                "producer": "Michael Jackson & Bill Bottrell",
+                "recordingDetails": "The guitar riff was played by Slash from Guns N' Roses, while the rap section was performed by Bill Bottrell. The track's innovative use of sound effects and sample triggering set new standards for pop production.",
+                "musicalElements": {
+                  "guitar": "Heavy rock riff by Slash",
+                  "drums": "Combination of live and programmed percussion",
+                  "samples": "Revolutionary use of triggered effects",
+                  "vocals": "Multiple harmony layers and spoken word elements"
                 }
-              ]
+              }
             }
           }
         }

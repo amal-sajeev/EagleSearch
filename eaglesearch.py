@@ -237,15 +237,16 @@ class EagleSearch:
             
             return ' '.join(text_parts)
     
-    def _extract_text_from_json(self, file_path) -> list[str]:
+    def _extract_text_from_json(self, file_path: str) -> list[str]:
         """
-        Extract text from JSON file with embedding-optimized context formatting.
+        Extract text from JSON file in a way that's optimized for LLM retrieval.
+        Focuses on creating natural, meaningful text chunks.
         
         Args:
             file_path (str): Path to the JSON file
         
         Returns:
-            list[str]: List of extracted text chunks with context prefixes
+            list[str]: List of natural text chunks suitable for RAG
         """
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
@@ -253,46 +254,34 @@ class EagleSearch:
                 
                 text_chunks = []
                 
-                def extract_text_with_context(obj, context=None):
-                    if context is None:
-                        context = []
-                    
+                def extract_text_with_context(obj):
                     if isinstance(obj, dict):
+                        # Collect all string/number values in this object
+                        description_items = []
                         for key, value in obj.items():
-                            if key.lower() in ['length', 'id', 'index']:
-                                continue
-                                
-                            new_context = context.copy()
-                            
-                            # Simplify context labels and handle special fields
-                            if key.lower() == 'title':
-                                new_context.append(f"TITLE: {value}")
-                            elif key.lower() == 'year':
-                                new_context.append(f"YEAR: {value}")
-                            elif key.lower() in ['genre', 'subgenre']:
-                                new_context.append(f"CATEGORY: {value}" if isinstance(value, str) else key.upper())
-                            
+                            if isinstance(value, (str, int, float)) and not key.lower() in ['id', 'index']:
+                                description_items.append(f"{value}")
+                        
+                        # If we found any values, join them into a meaningful chunk
+                        if description_items:
+                            text_chunks.append(" ".join(description_items))
+                        
+                        # Recurse through nested structures
+                        for value in obj.values():
                             if isinstance(value, (dict, list)):
-                                extract_text_with_context(value, new_context)
-                            elif isinstance(value, str) and len(value.strip()) > 0:
-                                # Format context in a way that embedding models can understand
-                                context_str = ' | '.join(new_context)
-                                if context_str:
-                                    text_chunks.append(f"CONTEXT: {context_str} CONTENT: {value}")
-                                else:
-                                    text_chunks.append(value)
+                                extract_text_with_context(value)
                                 
                     elif isinstance(obj, list):
                         for item in obj:
-                            extract_text_with_context(item, context)
+                            extract_text_with_context(item)
                 
                 extract_text_with_context(data)
-                return text_chunks
+                return [chunk for chunk in text_chunks if chunk.strip()]
                 
         except Exception as e:
             self.logger.error(f"Error processing JSON: {e}")
             return []
-    
+
     def _extract_text_from_html(self, file_path: str) -> str:
         """
         Extract text from HTML file.
@@ -559,9 +548,6 @@ class EagleSearch:
             "mean_pooling_columns": pooled_by_columns.to(torch.float32).detach().cpu().numpy()
         }
 
-        
-
-
     def chunk_document(self, file_path: str) -> List[Dict[str, Any]]:
         """
         Universal document chunking method supporting multiple file types.
@@ -651,7 +637,7 @@ class EagleSearch:
         return chunks
 
     # Embedding and uploading pdf pages
-    def ingest_pdf(self, pdf: Union[str,BytesIO], collection_name="", batch_size=4):
+    def _ingest_pdf(self, pdf: Union[str,BytesIO], collection_name="", batch_size=4):
         """Process entire PDF and store vectors with batch processing"""
         self._setup_collection(collection_name)
         if type(pdf) == type("haha"):
@@ -742,7 +728,7 @@ class EagleSearch:
                 print(f"Error processing {pdf}: {str(e)}")
                 continue
                 
-    def ingest_text(self, files: Union[str,BytesIO], collection_name: str = "", batch_size: str = 4):
+    def _ingest_text(self, files: Union[str,BytesIO], collection_name: str = "", batch_size: str = 4):
         """Process chunked text into embedded vectors with ColQwen and upload the vectors.
 
         Args:
