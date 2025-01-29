@@ -515,7 +515,7 @@ class EagleSearch:
 
     def _process_page(self, image):
         """Generate vectors for a single page"""
-        processed_image = self.processor.process_images([image])
+        processed_image = self.processor.process_images(d[image])
         image_embeddings = self.colmodel(**processed_image)
         
         # Get first embedding (batch size 1)
@@ -547,6 +547,147 @@ class EagleSearch:
             "mean_pooling_rows": pooled_by_rows.to(torch.float32).detach().cpu().numpy(),
             "mean_pooling_columns": pooled_by_columns.to(torch.float32).detach().cpu().numpy()
         }
+
+    # Embedding and uploading pdf pages
+    def _ingest_pdf(self, pdf: Union[str,BytesIO], collection_name="", batch_size=4):
+        """Process entire PDF and store vectors with batch processing"""
+        self._setup_collection(collection_name)
+        if type(pdf) == type("haha"):
+            doc = fitz.open(pdf)
+        else:
+            doc = fitz.open(stream = pdf.read(), filetype = "pdf")
+        metadata = doc.metadata
+        
+        # Clean metadata
+        if metadata:
+            metadata = self._clean_text_data(metadata)
+        
+        total_pages = len(doc)
+        
+        doc_id = str(uuid.uuid4())
+
+        # Process pages in batches
+        for batch_start in range(0, total_pages, batch_size):
+            batch_end = min(batch_start + batch_size, total_pages)
+            batch_points = []
+            
+            # Process each page in the current batch
+            for page_num in range(batch_start, batch_end):
+                page = doc[page_num]
+                
+                try:
+                    # Extract and clean text
+                    text_data = self._extract_page_text(page)
+                    # Convert to image and process
+                    image = self._convert_page_to_image(page)
+                    vectors = self._process_page(image)
+                    buffered = BytesIO()
+                    image.save(buffered,format="PNG")
+                    # Create point structure for this page
+                    metadata["page_image"] = base64.b64encode(buffered.getvalue()).decode()
+                    point = models.PointStruct(
+                        id= str(uuid.uuid4()),
+                        vector=vectors,
+                        payload={
+                            "doc_id" : doc_id,
+                            "page_id": f"{doc_id}_{page_num}",
+                            "doc_name": doc.name.split("/")[-1],
+                            "page_number": page_num,
+                            "metadata": metadata,
+                            "text_content": text_data,
+                            "page_dimensions": {
+                                "width": float(page.rect.width),
+                                "height": float(page.rect.height)
+                            }
+                        }
+                    )
+                    batch_points.append(point)
+                    
+                except Exception as e:
+                    print(f"Error processing page {page_num}: {str(e)}")
+                    continue
+            
+            # Batch upload to Qdrant
+            if batch_points:
+                try:
+                    self.client.upsert(
+                        collection_name=collection_name,
+                        points=batch_points
+                    )
+                    print(f"Processed and uploaded pages {batch_start} to {batch_end-1}")
+                except Exception as e:
+                    print(f"Error uploading batch {batch_start}-{batch_end-1}: {str(e)}")
+                    # Print the first point's payload for debugging
+                    if batch_points:
+                        print("First point payload sample:")
+                        print(batch_points[0].payload)
+        
+        doc.close()
+
+    def ingest_multiple_pdfs(self, pdfs: Union[List[str], List[BytesIO]], collection_name: str = "", batch_size: str = 4):
+        """
+        Process multiple PDFs sequentially
+        Args:
+            pdfs: Either a list of paths to PDF files or a list of BytesIO objects
+            batch_size: Number of pages to process at once for each PDF
+        """
+        for pdf in pdfs:
+            try:
+                print(f"Processing {pdf}")
+                self.ingest_pdf(pdf, batch_size)
+                print(f"Completed processing {pdf}")
+            except Exception as e:
+                print(f"Error processing {pdf}: {str(e)}")
+                continue
+                
+    def _ingest_photos(self, images: List[BytesIO], collection_name: str = ""):
+        """Processes and embeds JPEG and PNG files
+
+        Args:
+            image (BytesIO): List of Image data as BytesIO
+            collection_name (str, optional): _description_. Defaults to "".
+        """
+        point_batch = []
+        for image in images:
+            try:
+                #Convert BytesIO image to PIL Image
+                image = Image.open(image.read())
+
+                #Embed Image
+                image_vectors = self._process_page(image)
+                #Converting image to standard PNG to Base64 string
+                imgbuffer = BytesIO()
+                image.save(imgbuffer, format = "PNG")
+                # metadata["page_image"] = base64.b64encode(imgbuffer.getvalue()).decode()
+                point = models.PointStruct(
+                            id = str(uuid.uuid4()),
+                            vector = image_vectors,
+                            payload = {
+                                "doc_id" : str(uuid.uuid4()),
+                                "doc_name" : str(image.filename),
+                                "page_image" : base64.b64encode(imgbuffer.getvalue()).decode(),
+                                "page_dimensions" : {
+                                    "width" : float(image.width),
+                                    "height" : float(image.height)
+                                }
+                            }
+                        )
+                point_batch.append(point)
+                
+            except Exception as e:
+                        print(f"Error processing image {page_num}: {str(e)}")
+                        continue
+        try:
+            self.client.upsert(
+                collection_name= collection_name,
+                points = point_batch
+            )
+        except Exception as e:
+                    print(f"Error uploading batch {batch_start}-{batch_end-1}: {str(e)}")
+                    # Print the first point's payload for debugging
+                    if batch_points:
+                        print("First point payload sample:")
+                        print(batch_points[0].payload)
 
     def chunk_document(self, file_path: str) -> List[Dict[str, Any]]:
         """
@@ -636,98 +777,7 @@ class EagleSearch:
         
         return chunks
 
-    # Embedding and uploading pdf pages
-    def _ingest_pdf(self, pdf: Union[str,BytesIO], collection_name="", batch_size=4):
-        """Process entire PDF and store vectors with batch processing"""
-        self._setup_collection(collection_name)
-        if type(pdf) == type("haha"):
-            doc = fitz.open(pdf)
-        else:
-            doc = fitz.open(stream = pdf.read(), filetype = "pdf")
-        metadata = doc.metadata
-        
-        # Clean metadata
-        if metadata:
-            metadata = self._clean_text_data(metadata)
-        
-        total_pages = len(doc)
-        
-        doc_id = str(uuid.uuid4())
-
-        # Process pages in batches
-        for batch_start in range(0, total_pages, batch_size):
-            batch_end = min(batch_start + batch_size, total_pages)
-            batch_points = []
-            
-            # Process each page in the current batch
-            for page_num in range(batch_start, batch_end):
-                page = doc[page_num]
-                
-                try:
-                    # Extract and clean text
-                    text_data = self._extract_page_text(page)
-                    # Convert to image and process
-                    image = self._convert_page_to_image(page)
-                    vectors = self._process_page(image)
-                    buffered = BytesIO()
-                    image.save(buffered,format="PNG")
-                    # Create point structure for this page
-                    metadata["page_image"] = base64.b64encode(buffered.getvalue()).decode()
-                    point = models.PointStruct(
-                        id= str(uuid.uuid4()),
-                        vector=vectors,
-                        payload={
-                            "doc_id" : doc_id,
-                            "page_id": f"{doc_id}_{page_num}",
-                            "pdf_name": doc.name.split("/")[-1],
-                            "page_number": page_num,
-                            "metadata": metadata,
-                            "text_content": text_data,
-                            "page_dimensions": {
-                                "width": float(page.rect.width),
-                                "height": float(page.rect.height)
-                            }
-                        }
-                    )
-                    batch_points.append(point)
-                    
-                except Exception as e:
-                    print(f"Error processing page {page_num}: {str(e)}")
-                    continue
-            
-            # Batch upload to Qdrant
-            if batch_points:
-                try:
-                    self.client.upsert(
-                        collection_name=collection_name,
-                        points=batch_points
-                    )
-                    print(f"Processed and uploaded pages {batch_start} to {batch_end-1}")
-                except Exception as e:
-                    print(f"Error uploading batch {batch_start}-{batch_end-1}: {str(e)}")
-                    # Print the first point's payload for debugging
-                    if batch_points:
-                        print("First point payload sample:")
-                        print(batch_points[0].payload)
-        
-        doc.close()
-
-    def ingest_multiple_pdfs(self, pdfs: Union[List[str], List[BytesIO]], collection_name: str = "", batch_size: str = 4):
-        """
-        Process multiple PDFs sequentially
-        Args:
-            pdfs: Either a list of paths to PDF files or a list of BytesIO objects
-            batch_size: Number of pages to process at once for each PDF
-        """
-        for pdf in pdfs:
-            try:
-                print(f"Processing {pdf}")
-                self.ingest_pdf(pdf, batch_size)
-                print(f"Completed processing {pdf}")
-            except Exception as e:
-                print(f"Error processing {pdf}: {str(e)}")
-                continue
-                
+    
     def _ingest_text(self, files: Union[str,BytesIO], collection_name: str = "", batch_size: str = 4):
         """Process chunked text into embedded vectors with ColQwen and upload the vectors.
 

@@ -18,3 +18,4 @@ with open("dynamicoutput.txt","w") as textcheck:
     for i in nuchunks:
         textcheck.write(str(i)+"\n")
         pprint.pprint(i)
+e
