@@ -34,4 +34,4 @@ txtchunker = EagleSearch(
 # txtchunker._ingest_photos(images, "imgtest")
 
 
-print(txtchunker.search(query = 'Cars',img_collection="imgtest",limit=1))
+print(txtchunker.search(query = 'car',img_collection="imgtest",limit=1))

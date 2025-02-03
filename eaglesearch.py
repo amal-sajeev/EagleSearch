@@ -801,6 +801,10 @@ class EagleSearch:
         query_embedding = self.colmodel(**processed_query)[0]
         query_embedding = query_embedding.to(torch.float32).detach().cpu().numpy()
         
+        n=1
+        payload = []
+        
+
         #crafting the query filter for client and bot
         # query
         if txt_collection != "":
@@ -819,6 +823,9 @@ class EagleSearch:
                 ),
                 using = "txt_vectors"
             )
+            for hit in img_response.points:
+                hit.payload["score"] = hit.score
+                payload.append(hit.payload)
 
         if img_collection != "":
             img_response = self.client.query_points(
@@ -840,14 +847,11 @@ class EagleSearch:
                 with_payload=True,
                 using="original"
             )
-        # return response.points
-        n=1
-        payload = []
+            for hit in img_response.points:
+                hit.payload["score"] = hit.score
+                payload.append(hit.payload)
 
-        for hit in img_response.points:
-            hit.payload["score"] = hit.score
-            payload.append(hit.payload)
-    
+        # return response.points
         return payload
 
     # BYTE TO IMAGE CONVERSION FUNCTIONS ======================================================================
