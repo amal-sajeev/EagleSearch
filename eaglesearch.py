@@ -10,30 +10,24 @@ import uuid
 import xml.etree.ElementTree as ET
 import zipfile
 from io import BytesIO
-
 import ebooklib
 from ebooklib import epub
-
 import markdown
 from bs4 import BeautifulSoup
-
 import nltk
 import numpy as np
 import pandas as pd
 import torch
-
 from PIL import Image
-
 import sentence_transformers
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-
 import fitz  # PyMuPDF for PDF processing
-
 from colpali_engine.models import ColQwen2, ColQwen2Processor
 from qdrant_client import QdrantClient, models
+from typing import List, Dict, Any, Union, BinaryIO
+from fastapi import UploadFile
 
-from typing import List, Dict, Any, Union
 
 class EagleSearch:
        
@@ -50,7 +44,7 @@ class EagleSearch:
         Comprehensive document chunking utility supporting multiple file formats.
         
         Args:
-            max_chunk_size (int): Maximum characters per chunk
+            max_chunk_size (int): Maximum characters per chunkE
             similarity_threshold (float): Semantic similarity threshold
             embedding_model (str): Sentence embedding model to use
             batch_size (int): Batch size for embedding computation
@@ -515,7 +509,7 @@ class EagleSearch:
 
     def _process_page(self, image):
         """Generate vectors for a single page"""
-        processed_image = self.processor.process_images(d[image])
+        processed_image = self.processor.process_images([image])
         image_embeddings = self.colmodel(**processed_image)
         
         # Get first embedding (batch size 1)
@@ -640,18 +634,19 @@ class EagleSearch:
                 print(f"Error processing {pdf}: {str(e)}")
                 continue
                 
-    def _ingest_photos(self, images: List[BytesIO], collection_name: str = ""):
+    def _ingest_photos(self, images: Union[List[UploadFile], List[str]], collection_name: str = ""):
         """Processes and embeds JPEG and PNG files
-
         Args:
             image (BytesIO): List of Image data as BytesIO
             collection_name (str, optional): _description_. Defaults to "".
         """
+        self._setup_collection(collection_name)
+
         point_batch = []
-        for image in images:
+        for itimage in images:
             try:
                 #Convert BytesIO image to PIL Image
-                image = Image.open(image.read())
+                image = Image.open(itimage.file)
 
                 #Embed Image
                 image_vectors = self._process_page(image)
@@ -664,7 +659,7 @@ class EagleSearch:
                             vector = image_vectors,
                             payload = {
                                 "doc_id" : str(uuid.uuid4()),
-                                "doc_name" : str(image.filename),
+                                "doc_name" : str(itimage.filename),
                                 "page_image" : base64.b64encode(imgbuffer.getvalue()).decode(),
                                 "page_dimensions" : {
                                     "width" : float(image.width),
@@ -675,19 +670,20 @@ class EagleSearch:
                 point_batch.append(point)
                 
             except Exception as e:
-                        print(f"Error processing image {page_num}: {str(e)}")
+                        print(f"Error processing image {itimage.filename}: {str(e)}")
                         continue
         try:
+            print(point_batch)
             self.client.upsert(
                 collection_name= collection_name,
                 points = point_batch
             )
         except Exception as e:
-                    print(f"Error uploading batch {batch_start}-{batch_end-1}: {str(e)}")
+                    print(f"Error uploading batch: {str(e)}")
                     # Print the first point's payload for debugging
-                    if batch_points:
+                    if point_batch:
                         print("First point payload sample:")
-                        print(batch_points[0].payload)
+                        print(point_batch[0].payload)
 
     def chunk_document(self, file_path: str) -> List[Dict[str, Any]]:
         """
@@ -801,54 +797,54 @@ class EagleSearch:
             img_array: array of pdf pages
             text_array: array of text extracts as strings
         """
-        self._setup_collection(collection_name)
         processed_query = self.processor.process_queries([query]).to(self.model.device)
         query_embedding = self.colmodel(**processed_query)[0]
         query_embedding = query_embedding.to(torch.float32).detach().cpu().numpy()
         
         #crafting the query filter for client and bot
-        query
-
-        text_response = self.client.query_points(
-            collection_name = txt_collection,
-            query = query_embedding,
-            query_filter= models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key = "client",
-                        match = models.MatchValue(
-                            value= client_id
+        # query
+        if txt_collection != "":
+            text_response = self.client.query_points(
+                collection_name = txt_collection,
+                query = query_embedding,
+                query_filter= models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key = "client",
+                            match = models.MatchValue(
+                                value= client_id
+                            )
                         )
-                    )
-                ]
-            ),
-            using = "txt_vectors"
-        )
+                    ]
+                ),
+                using = "txt_vectors"
+            )
 
-        img_response = self.client.query_points(
-            collection_name=img_collection,
-            query=query_embedding,
-            prefetch=[
-                models.Prefetch(
-                    query=query_embedding,
-                    limit=prefetch_limit,
-                    using="mean_pooling_columns"
-                ),
-                models.Prefetch(
-                    query=query_embedding,
-                    limit=prefetch_limit,
-                    using="mean_pooling_rows"
-                ),
-            ],
-            limit=limit,
-            with_payload=True,
-            using="original"
-        )
+        if img_collection != "":
+            img_response = self.client.query_points(
+                collection_name=img_collection,
+                query=query_embedding,
+                prefetch=[
+                    models.Prefetch(
+                        query=query_embedding,
+                        limit=prefetch_limit,
+                        using="mean_pooling_columns"
+                    ),
+                    models.Prefetch(
+                        query=query_embedding,
+                        limit=prefetch_limit,
+                        using="mean_pooling_rows"
+                    ),
+                ],
+                limit=limit,
+                with_payload=True,
+                using="original"
+            )
         # return response.points
         n=1
         payload = []
 
-        for hit in response.points:
+        for hit in img_response.points:
             hit.payload["score"] = hit.score
             payload.append(hit.payload)
     

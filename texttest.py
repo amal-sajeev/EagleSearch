@@ -1,6 +1,8 @@
 from eaglesearch import EagleSearch
 import pprint
 from io import BytesIO
+from fastapi import UploadFile
+import os
 
 txtchunker = EagleSearch(
     max_chunk_size=1500,
@@ -9,13 +11,27 @@ txtchunker = EagleSearch(
     qdrant_url ="https://c8abf992-e97b-4ccd-a2b0-046e5c9f5ee5.europe-west3-0.gcp.cloud.qdrant.io"
     )
 
-with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json", "rb") as file:
+# with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json", "rb") as file:
     
-    print(BytesIO(file.read()).read())
+#     print(BytesIO(file.read()).read())
 
-nuchunks = txtchunker.chunk_document("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json")
-with open("dynamicoutput.txt","w") as textcheck:
-    for i in nuchunks:
-        textcheck.write(str(i)+"\n")
-        pprint.pprint(i)
-e
+# nuchunks = txtchunker.chunk_document("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json")
+# with open("dynamicoutput.txt","w") as textcheck:
+#     for i in nuchunks:
+#         textcheck.write(str(i)+"\n")
+#         pprint.pprint(i)
+
+# images=[]
+
+# for i in [1,2,3]:
+#     with open(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png","rb") as photo:
+#         upfile = UploadFile(
+#             file= BytesIO(photo.read()),
+#             size= photo.seek(0, os.SEEK_END),
+#             filename= photo.name
+#         )
+#         images.append(upfile)
+# txtchunker._ingest_photos(images, "imgtest")
+
+
+print(txtchunker.search(query = 'Cars',img_collection="imgtest",limit=1))
