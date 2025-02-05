@@ -3,6 +3,7 @@ import pprint
 from io import BytesIO
 from fastapi import UploadFile
 import os
+from tqdm import tqdm
 
 txtchunker = EagleSearch(
     max_chunk_size=1500,
@@ -21,17 +22,17 @@ txtchunker = EagleSearch(
 #         textcheck.write(str(i)+"\n")
 #         pprint.pprint(i)
 
-# images=[]
 
-# for i in [1,2,3]:
-#     with open(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png","rb") as photo:
-#         upfile = UploadFile(
-#             file= BytesIO(photo.read()),
-#             size= photo.seek(0, os.SEEK_END),
-#             filename= photo.name
-#         )
-#         images.append(upfile)
-# txtchunker._ingest_photos(images, "imgtest")
+images=[]
+
+for i in tqdm([1,2,3,4,5,6]):
+    with open(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png","rb") as photo:
+        upfile = UploadFile(
+            file= BytesIO(photo.read()),
+            filename= photo.name
+        )
+        images.append(upfile)
+txtchunker._ingest_photos(images, "imgtest")
 
 
-print(txtchunker.search(query = 'car',img_collection="imgtest",limit=1))
+print(txtchunker.search(query = 'cat',img_collection="imgtest",limit=1)[0]["doc_name"])

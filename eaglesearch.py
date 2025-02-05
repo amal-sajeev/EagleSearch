@@ -29,6 +29,8 @@ from typing import List, Dict, Any, Union, BinaryIO
 from fastapi import UploadFile
 
 
+
+
 class EagleSearch:
        
     def __init__(self, 
@@ -543,13 +545,13 @@ class EagleSearch:
         }
 
     # Embedding and uploading pdf pages
-    def _ingest_pdf(self, pdf: Union[str,BytesIO], collection_name="", batch_size=4):
+    def _ingest_pdf(self, pdf: Union[str, UploadFile], collection_name="", batch_size=4):
         """Process entire PDF and store vectors with batch processing"""
         self._setup_collection(collection_name)
-        if type(pdf) == type("haha"):
+        if type(pdf) == str:
             doc = fitz.open(pdf)
         else:
-            doc = fitz.open(stream = pdf.read(), filetype = "pdf")
+            doc = fitz.open(stream = pdf.file, filetype = "pdf")
         metadata = doc.metadata
         
         # Clean metadata
@@ -617,23 +619,7 @@ class EagleSearch:
                         print(batch_points[0].payload)
         
         doc.close()
-
-    def ingest_multiple_pdfs(self, pdfs: Union[List[str], List[BytesIO]], collection_name: str = "", batch_size: str = 4):
-        """
-        Process multiple PDFs sequentially
-        Args:
-            pdfs: Either a list of paths to PDF files or a list of BytesIO objects
-            batch_size: Number of pages to process at once for each PDF
-        """
-        for pdf in pdfs:
-            try:
-                print(f"Processing {pdf}")
-                self.ingest_pdf(pdf, batch_size)
-                print(f"Completed processing {pdf}")
-            except Exception as e:
-                print(f"Error processing {pdf}: {str(e)}")
-                continue
-                
+            
     def _ingest_photos(self, images: Union[List[UploadFile], List[str]], collection_name: str = ""):
         """Processes and embeds JPEG and PNG files
         Args:
@@ -641,10 +627,19 @@ class EagleSearch:
             collection_name (str, optional): _description_. Defaults to "".
         """
         self._setup_collection(collection_name)
-
+        
         point_batch = []
         for itimage in images:
             try:
+                if type(itimage) == str:
+                    path = itimage
+                    with open(path,"rb") as tempfile:
+                        itimage = UploadFile(
+                            file= BytesIO(tempfile.read()),
+                            filename= photo.name
+                        )
+                        
+
                 #Convert BytesIO image to PIL Image
                 image = Image.open(itimage.file)
 
@@ -659,8 +654,9 @@ class EagleSearch:
                             vector = image_vectors,
                             payload = {
                                 "doc_id" : str(uuid.uuid4()),
-                                "doc_name" : str(itimage.filename),
+                                "doc_name" : str(itimage.filename.split("/")[-1]),
                                 "page_image" : base64.b64encode(imgbuffer.getvalue()).decode(),
+                                ""
                                 "page_dimensions" : {
                                     "width" : float(image.width),
                                     "height" : float(image.height)
@@ -784,6 +780,61 @@ class EagleSearch:
         self._setup_collection(collection_name)
         # if type(files) == type("hehe"):
         #     text = 
+
+    def ingest(self, paths:Union[str,List[str]] = None, files: Union[UploadFile,List[UploadFile]] = None, txt_collection:str = "", img_collection:str = ""):
+        """Chunk content of files, embed them into vectors, and upload them to vector store.
+
+        Args:
+            files (Union[str,BytesIO,List[str],List[UploadFile]]): File or list of Files to ingest.
+            txt_collection (str, optional): The collection that all text files will be uploaded to. Defaults to "".
+            img_collection (str, optional): The collection that all image, presentation, and pdf files will be uploaded to. Defaults to "".
+        """
+        txfiles = [] 
+        imgfiles = []
+
+        if paths:
+            for path in paths:
+                match(path.split(".")[-1].lower()):
+                    case "png":
+                        imgfiles.append(self._ingest_photos)
+                    case "jpg":
+
+                    case "pdf":
+
+                    case 'txt':
+                                              
+                    case 'docx':
+
+                    case 'md':
+
+                    case 'csv':
+                          
+                    case 'json':
+                        
+                    case 'html':
+
+                    case 'xml': 
+
+                    case 'epub':
+
+                    case 'log': 
+                                                
+        
+        # Batch upload to Qdrant
+            if batch_points:
+                try:
+                    self.client.upsert(
+                        collection_name=collection_name,
+                        points=batch_points
+                    )
+                    print(f"Processed and uploaded pages {batch_start} to {batch_end-1}")
+                except Exception as e:
+                    print(f"Error uploading batch {batch_start}-{batch_end-1}: {str(e)}")
+                    # Print the first point's payload for debugging
+                    if batch_points:
+                        print("First point payload sample:")
+                        print(batch_points[0].payload)
+        
 
     def search(self, query, limit=10, prefetch_limit=100, client_id = "", bot_id ="", txt_collection:str = "", img_collection:str=""):
         """Retuns an array of strings of image data and an array of text of the matching pages.
