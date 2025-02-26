@@ -12,15 +12,40 @@ txtchunker = EagleSearch(
     qdrant_url ="https://c8abf992-e97b-4ccd-a2b0-046e5c9f5ee5.europe-west3-0.gcp.cloud.qdrant.io"
     )
 
-# with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json", "rb") as file:
-    
-#     print(BytesIO(file.read()).read())
+#JSON TEST
 
-# nuchunks = txtchunker.chunk_document("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json")
-# with open("dynamicoutput.txt","w") as textcheck:
-#     for i in nuchunks:
-#         textcheck.write(str(i)+"\n")
-#         pprint.pprint(i)
+# with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json", "rb") as file:
+
+#     # print(BytesIO(file.read()).read())
+
+#     upfile = UploadFile(
+#         file = BytesIO(file.read()),
+#         filename = file.name
+#     )
+
+# nuchunks = txtchunker.chunk_document(upfile)
+# # with open("dynamicoutput.txt","w") as textcheck:
+# for i in nuchunks:
+#     # textcheck.write(str(i)+"\n")
+#     pprint.pprint(i)
+
+# HTML TEST
+
+# with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html", "rb") as file:
+
+#     # print(BytesIO(file.read()).read())
+
+#     upfile = UploadFile(
+#         file = BytesIO(file.read()),
+#         filename = file.name
+#     )
+
+# nuchunks = txtchunker.chunk_document(upfile)
+# # with open("dynamicoutput.txt","w") as textcheck:
+# for i in nuchunks:
+#     # textcheck.write(str(i)+"\n")
+#     pprint.pprint(i)
+
 
 
 images=[]
