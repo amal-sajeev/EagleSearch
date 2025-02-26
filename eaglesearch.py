@@ -830,7 +830,7 @@ class EagleSearch:
         return chunks
 
 
-    def _ingest_text(self, chunks: List[str], collection_name: str = "", batch_size: str = 4):
+    def _ingest_text(self, chunks: List[str], file:UploadFile, collection_name: str = "", batch_size: str = 4):
         """Process chunked text into embedded vectors with ColQwen and upload the vectors.
 
         Args:
@@ -838,6 +838,14 @@ class EagleSearch:
             batch_size (int, optional): Batch size for parallel uploading. Defaults to 4.
         """
         self._setup_collection(collection_name)
+
+        point_batch = []
+        chunk = ""
+        for chunk in chunks:
+            try:
+                
+            except Exception as e:
+                self.logger.error(f"Error ingesting text chunk: Error: {e}\n Error chunk: {chunk}")
         
 
     # def ingest(self, paths:Union[str,List[str]] = None, files: Union[UploadFile,List[UploadFile]] = None, txt_collection:str = "", img_collection:str = ""):

@@ -20,7 +20,8 @@ txtchunker = EagleSearch(
 
 #     upfile = UploadFile(
 #         file = BytesIO(file.read()),
-#         filename = file.name
+#         filename = file.name,
+#         size = os.path.getsize("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json")
 #     )
 
 # nuchunks = txtchunker.chunk_document(upfile)
@@ -37,7 +38,8 @@ txtchunker = EagleSearch(
 
 #     upfile = UploadFile(
 #         file = BytesIO(file.read()),
-#         filename = file.name
+#         filename = file.name,
+#         size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html")
 #     )
 
 # nuchunks = txtchunker.chunk_document(upfile)
@@ -54,7 +56,8 @@ for i in tqdm([1,2,3,4,5,6]):
     with open(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png","rb") as photo:
         upfile = UploadFile(
             file= BytesIO(photo.read()),
-            filename= photo.name
+            filename= photo.name,
+            size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png")
         )
         images.append(upfile)
 txtchunker._ingest_photos(images, "imgtest")
