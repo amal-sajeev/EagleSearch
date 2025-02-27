@@ -416,38 +416,53 @@ class EagleSearch:
 
         return processed_sentences
 
-    def _setup_collection(self, collection_name):
+    def _setup_collection(self, collection_name, txt:bool=False):
         """Create Qdrant collection if it doesn't exist"""
         try:
             self.client.get_collection(collection_name)
         except:
-            self.client.create_collection(
-                collection_name=collection_name,
-                vectors_config={
-                    "original": models.VectorParams(
-                        size=128,
-                        distance=models.Distance.COSINE,
-                        multivector_config=models.MultiVectorConfig(
-                            comparator=models.MultiVectorComparator.MAX_SIM
+            if txt == True:
+                self.client.create_collection(
+                    collection_name=collection_name,
+                    vectors_config={
+                        "txt_vectors": models.VectorParams(
+                            size=128,
+                            distance=models.Distance.COSINE,
+                            multivector_config=models.MultiVectorConfig(
+                                comparator=models.MultiVectorComparator.MAX_SIM
+                            ),
+                            hnsw_config=models.HnswConfigDiff(m=0)
+                        )
+                    }
+                )
+            else:
+                self.client.create_collection(
+                    collection_name=collection_name,
+                    vectors_config={
+                        "original": models.VectorParams(
+                            size=128,
+                            distance=models.Distance.COSINE,
+                            multivector_config=models.MultiVectorConfig(
+                                comparator=models.MultiVectorComparator.MAX_SIM
+                            ),
+                            hnsw_config=models.HnswConfigDiff(m=0)  # Disable HNSW for original vectors
                         ),
-                        hnsw_config=models.HnswConfigDiff(m=0)  # Disable HNSW for original vectors
-                    ),
-                    "mean_pooling_columns": models.VectorParams(
-                        size=128,
-                        distance=models.Distance.COSINE,
-                        multivector_config=models.MultiVectorConfig(
-                            comparator=models.MultiVectorComparator.MAX_SIM
+                        "mean_pooling_columns": models.VectorParams(
+                            size=128,
+                            distance=models.Distance.COSINE,
+                            multivector_config=models.MultiVectorConfig(
+                                comparator=models.MultiVectorComparator.MAX_SIM
+                            )
+                        ),
+                        "mean_pooling_rows": models.VectorParams(
+                            size=128,
+                            distance=models.Distance.COSINE,
+                            multivector_config=models.MultiVectorConfig(
+                                comparator=models.MultiVectorComparator.MAX_SIM
+                            )
                         )
-                    ),
-                    "mean_pooling_rows": models.VectorParams(
-                        size=128,
-                        distance=models.Distance.COSINE,
-                        multivector_config=models.MultiVectorConfig(
-                            comparator=models.MultiVectorComparator.MAX_SIM
-                        )
-                    )
-                }
-            )
+                    }
+                )
 
     def _clean_text_data(self, text_data):
         """Clean text data to ensure it's JSON serializable"""
@@ -753,7 +768,7 @@ class EagleSearch:
         
         if file_extension == ".json":
             # Handle JSON content as before
-            return self._process_json_content(full_text)
+            return full_text
         
         # Split into sentences
         sentences = nltk.sent_tokenize(str(full_text))
@@ -830,23 +845,60 @@ class EagleSearch:
         return chunks
 
 
-    def _ingest_text(self, chunks: List[str], file:UploadFile, collection_name: str = "", batch_size: str = 4):
+    def _ingest_text(self, chunks: List[str], file:UploadFile, collection_name: str = "", client_id = "", bot_id = "", batch_size: str = 4):
         """Process chunked text into embedded vectors with ColQwen and upload the vectors.
 
         Args:
             text (List): Text chunks to embed.
             batch_size (int, optional): Batch size for parallel uploading. Defaults to 4.
         """
-        self._setup_collection(collection_name)
+        self._setup_collection(collection_name, True)
 
-        point_batch = []
-        chunk = ""
-        for chunk in chunks:
-            try:
+         # Generate embeddings for text chunks
+        embeddings = []
+        for i, chunk in enumerate(chunks):
+            # Process the text with the processor
+            # Generate embeddings 
+            embedding = self.processor.process_queries(chunk).to(self.model.device)
+
                 
-            except Exception as e:
-                self.logger.error(f"Error ingesting text chunk: Error: {e}\n Error chunk: {chunk}")
+            # Convert to numpy for Qdrant
+            embedding_np = self.colmodel(**embedding)[0]
+            embedding_np = embedding_np.to(torch.float32).detach().numpy()
+            embeddings.append((i, embedding_np, chunk))
         
+        # Get embedding dimension
+        embedding_dimension = embeddings[0][1].shape[0]
+
+        print(embedding_dimension)
+
+        # Prepare points for uploading
+        points = []
+        for idx, embedding, text in embeddings:
+            points.append(
+                models.PointStruct(
+                    id=idx,
+                    vector = {"txt_vectors": embedding},
+                    payload={
+                        "doc_id": str(uuid.uuid4()),
+                        "doc_name": file.filename,
+                        "client": client_id,  # Add client_id for search filtering
+                        "bot_id": bot_id,     # Add bot_id for search filtering
+                        "type": file.filename.split(".")[-1],        # Add type identifier
+                        "content": text
+                    }
+                )
+            )
+        
+        # Upload points to Qdrant
+        self.client.upsert(
+            collection_name=collection_name,
+            points=points
+        )
+        
+        print(f"Successfully embedded and uploaded {len(chunks)} chunks to Qdrant collection '{collection_name}'")
+        # return client
+            
 
     # def ingest(self, paths:Union[str,List[str]] = None, files: Union[UploadFile,List[UploadFile]] = None, txt_collection:str = "", img_collection:str = ""):
     #     """Chunk content of files, embed them into vectors, and upload them to vector store.
@@ -941,7 +993,7 @@ class EagleSearch:
                 ),
                 using = "txt_vectors"
             )
-            for hit in img_response.points:
+            for hit in text_response.points:
                 hit.payload["score"] = hit.score
                 payload.append(hit.payload)
 

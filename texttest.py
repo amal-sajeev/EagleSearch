@@ -32,35 +32,37 @@ txtchunker = EagleSearch(
 
 # HTML TEST
 
-# with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html", "rb") as file:
+with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html", "rb") as file:
 
-#     # print(BytesIO(file.read()).read())
+    # print(BytesIO(file.read()).read())
 
-#     upfile = UploadFile(
-#         file = BytesIO(file.read()),
-#         filename = file.name,
-#         size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html")
-#     )
+    upfile = UploadFile(
+        file = BytesIO(file.read()),
+        filename = file.name.split("/")[-1],
+        size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html")
+    )
 
-# nuchunks = txtchunker.chunk_document(upfile)
-# # with open("dynamicoutput.txt","w") as textcheck:
-# for i in nuchunks:
-#     # textcheck.write(str(i)+"\n")
-#     pprint.pprint(i)
+nuchunks = txtchunker.chunk_document(upfile)
+# with open("dynamicoutput.txt","w") as textcheck:
+print(nuchunks)
+txtchunker._ingest_text(nuchunks,upfile,"txttest", "anthony", "amarna",True)
 
-
-
-images=[]
-
-for i in tqdm([1,2,3,4,5,6]):
-    with open(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png","rb") as photo:
-        upfile = UploadFile(
-            file= BytesIO(photo.read()),
-            filename= photo.name,
-            size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png")
-        )
-        images.append(upfile)
-txtchunker._ingest_photos(images, "imgtest")
+pprint.pprint(txtchunker.search(query = 'small',txt_collection="txttest",client_id = "anthony",limit=5))
 
 
-print(txtchunker.search(query = 'cat',img_collection="imgtest",limit=1)[0]["doc_name"])
+
+# images=[]
+
+# for i in tqdm([1,2,3,4,5,6]):
+#     with open(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png","rb") as photo:
+#         upfile = UploadFile(
+#             file= BytesIO(photo.read()),
+#             filename= photo.name,
+#             size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png")
+#         )
+#         images.append(upfile)
+# txtchunker._ingest_photos(images, "imgtest")
+
+
+# print(txtchunker.search(query = 'cat',img_collection="imgtest",limit=1)[0]["doc_name"])
+ 
