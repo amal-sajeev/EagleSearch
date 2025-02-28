@@ -28,6 +28,7 @@ from qdrant_client import QdrantClient, models
 from typing import List, Dict, Any, Union, BinaryIO
 from fastapi import UploadFile
 import asyncio
+import pprint
 
 
 
@@ -89,7 +90,6 @@ class EagleSearch:
             url=qdrant_url,
             api_key=qdrant_api_key
         )
-
 
         # Logging configuration
         logging.basicConfig(level=logging.INFO,
@@ -281,7 +281,7 @@ class EagleSearch:
                             else:
                                 chunk = f"{field_name}: {value}"
                                 
-                            text_chunks.append(chunk)
+                            text_chunks.append(chunk.encode('utf-8', errors='ignore').decode('utf-8'))
                     
                     # Process nested structures
                     for key, value in obj.items():
@@ -293,7 +293,7 @@ class EagleSearch:
                         process_node(item, context)
             
             process_node(data)
-            return [chunk for chunk in text_chunks if chunk.strip()]
+            return [{"text":chunk, "length":len(chunk)} for chunk in text_chunks if chunk.strip()]
         except Exception as e:
             print(f"Error processing JSON: {e}")
             return []
@@ -744,7 +744,6 @@ class EagleSearch:
         try:
             text_extractor = extraction_methods.get(file_extension)
             if text_extractor:
-                print(type(file))
                 full_text = text_extractor(file)
             else:
                 raise ValueError(f"Unsupported file type: {file_extension}")
@@ -843,7 +842,6 @@ class EagleSearch:
         
         return chunks
 
-
     def _ingest_text(self, chunks: List[str], file:UploadFile, collection_name: str = "", client_id = "", bot_id = "", batch_size: str = 4):
         """Process chunked text into embedded vectors with ColQwen and upload the vectors.
 
@@ -856,7 +854,8 @@ class EagleSearch:
         # Generate embeddings for text chunks
         embeddings = []
         #E5 embedding
-        proembeddings = self.e5model.encode(chunks,prompt="passage:")
+        pprint.pprint(chunks)
+        proembeddings = self.e5model.encode([i["text"] for i in chunks],prompt="passage:")
         i=0
         for chunk,embed in zip(chunks,proembeddings):
             i+=1
@@ -911,31 +910,40 @@ class EagleSearch:
         else:
             flist = files
 
+        if txt_collection !="":
+            self._setup_collection(txt_collection,txt=True)
+        if img_collection !="":
+            self._setup_collection(img_collection)
+
         for i in flist:
             
             fformat = i.filename.split(".")[-1]
+            print(fformat)
             if fformat in txformats:
                 if txt_collection != "":
                     txchunks = self.chunk_document(i)
-                    return(self._ingest_text(
+                    self._ingest_text(
                         chunks =txchunks,
                         file = i,
                         collection_name= txt_collection,
                         client_id= client_id,
                         bot_id = bot_id,
-                    batch_size=5))
+                    batch_size=5)
             elif fformat in imgformats:
                 if img_collection != "":
+                    
                     if fformat == "pdf":
-                        return(self._ingest_pdf(
+                        print("pdf check passed")
+                        self._ingest_pdf(
                             pdf=i,
                             collection_name= img_collection,
-                            batch_size=5))
+                            batch_size=5)
                     else:
-                        return(self._ingest_photos(
+                        print("png check passed")
+                        self._ingest_photos(
                             images = i,
                             collection_name=img_collection
-                            ))
+                            )
             else:
                 raise ValueError(f"Unsupported file type: {fformat}")
 

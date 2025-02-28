@@ -50,7 +50,7 @@ with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnolog
 # with open("dynamicoutput.txt","w") as textcheck:
 #     print(nuchunks)
 
-txtchunker.ingest("anthony", "amarna",upfile,"txttest")
+
 
 #TEXT VECTOR SEARCH
 
@@ -60,16 +60,18 @@ txtchunker.ingest("anthony", "amarna",upfile,"txttest")
 
 # images=[]
 
-# for i in tqdm([1,2,3,4,5,6]):
-#     with open(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png","rb") as photo:
-#         upfile = UploadFile(
-#             file= BytesIO(photo.read()),
-#             filename= photo.name,
-#             size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png")
-#         )
-#         images.append(upfile)
+for i in tqdm([1,2,3,4,5,6]):
+    with open(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png","rb") as photo:
+        upfilo = UploadFile(
+            file= BytesIO(photo.read()),
+            filename= photo.name.split("/")[-1],
+            size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png")
+        )
+        upfile.append(upfilo)
 # txtchunker._ingest_photos(images, "imgtest")
+print(upfile)
 
+txtchunker.ingest("anthony", "amarna",upfile,"txttest","imgtest")
 
 # print(txtchunker.search(query = 'cat',img_collection="imgtest",limit=1)[0]["doc_name"])
  
