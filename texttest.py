@@ -13,18 +13,21 @@ txtchunker = EagleSearch(
     )
 
 #JSON TEST
-
+upfile = []
 with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json", "rb") as file:
 
     # print(BytesIO(file.read()).read())
 
-    upfile = UploadFile(
+    upfilo = UploadFile(
         file = BytesIO(file.read()),
-        filename = file.name,
+        filename = file.name.split("/")[-1],
         size = os.path.getsize("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json")
     )
+    upfile.append(upfilo)
+    
+# print(upfile.filename.split(".")[-1])
+# nuchunks = txtchunker.chunk_document(upfile)
 
-nuchunks = txtchunker.chunk_document(upfile)
 # with open("dynamicoutput.txt","w") as textcheck:
 #     for i in nuchunks:
 #         # textcheck.write(str(i)+"\n")
@@ -32,25 +35,26 @@ nuchunks = txtchunker.chunk_document(upfile)
 
 # HTML TEST
 
-# with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html", "rb") as file:
+with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html", "rb") as file:
 
-#     # print(BytesIO(file.read()).read())
+    # print(BytesIO(file.read()).read())
 
-#     upfile = UploadFile(
-#         file = BytesIO(file.read()),
-#         filename = file.name.split("/")[-1],
-#         size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html")
-#     )
-#
+    upfilo = UploadFile(
+        file = BytesIO(file.read()),
+        filename = file.name.split("/")[-1],
+        size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html")
+    )
+    upfile.append(upfilo)
+
 # nuchunks = txtchunker.chunk_document(upfile)
 # with open("dynamicoutput.txt","w") as textcheck:
-# print(nuchunks)
+#     print(nuchunks)
 
-# txtchunker._ingest_text(nuchunks,upfile,"txttest", "anthony", "amarna",True)
+txtchunker.ingest("anthony", "amarna",upfile,"txttest")
 
 #TEXT VECTOR SEARCH
 
-pprint.pprint(txtchunker.search(query = "Which music video had the gravity lean?",txt_collection="txttest",client_id = "anthony", bot_id = "amarna",limit=5))
+# pprint.pprint(txtchunker.search(query = "Which music video had the gravity lean?",txt_collection="txttest",client_id = "anthony", bot_id = "amarna",limit=5))
 
 
 

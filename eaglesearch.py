@@ -656,8 +656,9 @@ class EagleSearch:
                         print(batch_points[0].payload)
 
         doc.close()
+        return(total_pages)
 
-    def _ingest_photos(self, images: Union[List[UploadFile], List[str]], collection_name: str = ""):
+    def _ingest_photos(self, images: Union[List[UploadFile], UploadFile], collection_name: str = ""):
         """Processes and embeds JPEG and PNG files
         Args:
             image (BytesIO): List of Image data as BytesIO
@@ -666,17 +667,12 @@ class EagleSearch:
         self._setup_collection(collection_name)
 
         point_batch = []
+        if type(images) == UploadFile:
+            temp = []
+            temp.append(images)
+            images = temp
         for itimage in images:
             try:
-                if type(itimage) == str:
-                    path = itimage
-                    with open(path,"rb") as tempfile:
-                        itimage = UploadFile(
-                            file= BytesIO(tempfile.read()),
-                            filename= photo.name
-                        )
-
-
                 #Convert BytesIO image to PIL Image
                 image = Image.open(itimage.file)
 
@@ -710,6 +706,7 @@ class EagleSearch:
                 collection_name= collection_name,
                 points = point_batch
             )
+            return(len(images))
         except Exception as e:
                     print(f"Error uploading batch: {str(e)}")
                     # Print the first point's payload for debugging
@@ -856,19 +853,8 @@ class EagleSearch:
         """
         self._setup_collection(collection_name, True)
 
-         # Generate embeddings for text chunks
+        # Generate embeddings for text chunks
         embeddings = []
-        # for i, chunk in enumerate(chunks):
-            # Process the text with the processor
-            # # Generate embeddings with ColQwen
-            # embedding = self.processor.process_queries(chunk).to(self.model.device)
-
-                
-            # # Convert to numpy for Qdrant
-            # embedding_np = self.colmodel(**embedding)[0]
-            # embedding_np = embedding_np.to(torch.float32).detach().numpy()
-            # embeddings.append((i, embedding_np, chunk))
-        
         #E5 embedding
         proembeddings = self.e5model.encode(chunks,prompt="passage:")
         i=0
@@ -905,64 +891,53 @@ class EagleSearch:
             points=points
         )
         
-        print(f"Successfully embedded and uploaded {len(chunks)} chunks to Qdrant collection '{collection_name}'")
-        # return client
+        return len(points)
             
+    #   Main Ingestion function
+    def ingest(self, client_id, bot_id, files: Union[UploadFile,List[UploadFile]], txt_collection:str = "", img_collection:str = ""):
+        """Chunk content of files, embed them into vectors, and upload them to vector store.
+    
+        Args:
+            files (Union[str,BytesIO,List[str],List[UploadFile]]): File or list of Files to ingest.
+            txt_collection (str, optional): The collection that all text files will be uploaded to. Defaults to "".
+            img_collection (str, optional): The collection that all image, presentation, and pdf files will be uploaded to. Defaults to "".
+        """
+        imgformats = ["png","jpg","pdf"]
+        txformats = ['txt','docx','md','csv','json','html','xml','epub','log']
 
-    # def ingest(self, paths:Union[str,List[str]] = None, files: Union[UploadFile,List[UploadFile]] = None, txt_collection:str = "", img_collection:str = ""):
-    #     """Chunk content of files, embed them into vectors, and upload them to vector store.
-    #
-    #     Args:
-    #         files (Union[str,BytesIO,List[str],List[UploadFile]]): File or list of Files to ingest.
-    #         txt_collection (str, optional): The collection that all text files will be uploaded to. Defaults to "".
-    #         img_collection (str, optional): The collection that all image, presentation, and pdf files will be uploaded to. Defaults to "".
-    #     """
-    #     txfiles = []
-    #     imgfiles = []
-    #
-    #     if paths:
-    #         for path in paths:
-    #             match(path.split(".")[-1].lower()):
-    #                 case "png":
-    #                     imgfiles.append(self._ingest_photos)
-    #                 case "jpg":
-    #
-    #                 case "pdf":
-    #
-    #                 case 'txt':
-    #
-    #                 case 'docx':
-    #
-    #                 case 'md':
-    #
-    #                 case 'csv':
-    #
-    #                 case 'json':
-    #
-    #                 case 'html':
-    #
-    #                 case 'xml':
-    #
-    #                 case 'epub':
-    #
-    #                 case 'log':
-    #
-    #
-    #     # Batch upload to Qdrant
-    #         if batch_points:
-    #             try:
-    #                 self.client.upsert(
-    #                     collection_name=collection_name,
-    #                     points=batch_points
-    #                 )
-    #                 print(f"Processed and uploaded pages {batch_start} to {batch_end-1}")
-    #             except Exception as e:
-    #                 print(f"Error uploading batch {batch_start}-{batch_end-1}: {str(e)}")
-    #                 # Print the first point's payload for debugging
-    #                 if batch_points:
-    #                     print("First point payload sample:")
-    #                     print(batch_points[0].payload)
-    # ````````````````
+        flist = [] 
+        if type(files) == UploadFile:
+            flist.append(files)
+        else:
+            flist = files
+
+        for i in flist:
+            
+            fformat = i.filename.split(".")[-1]
+            if fformat in txformats:
+                if txt_collection != "":
+                    txchunks = self.chunk_document(i)
+                    return(self._ingest_text(
+                        chunks =txchunks,
+                        file = i,
+                        collection_name= txt_collection,
+                        client_id= client_id,
+                        bot_id = bot_id,
+                    batch_size=5))
+            elif fformat in imgformats:
+                if img_collection != "":
+                    if fformat == "pdf":
+                        return(self._ingest_pdf(
+                            pdf=i,
+                            collection_name= img_collection,
+                            batch_size=5))
+                    else:
+                        return(self._ingest_photos(
+                            images = i,
+                            collection_name=img_collection
+                            ))
+            else:
+                raise ValueError(f"Unsupported file type: {fformat}")
 
     def search(self, query, limit=10, prefetch_limit=100, client_id = "", bot_id ="", txt_collection:str = "", img_collection:str=""):
         """Retuns an array of strings of image data and an array of text of the matching pages.
@@ -1080,3 +1055,4 @@ class EagleSearch:
             """
             img = self.base64_to_image(base64_string)
             img.save(output_path)
+ 
