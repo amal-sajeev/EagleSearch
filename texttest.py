@@ -14,40 +14,43 @@ txtchunker = EagleSearch(
 
 #JSON TEST
 
-# with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json", "rb") as file:
-
-#     # print(BytesIO(file.read()).read())
-
-#     upfile = UploadFile(
-#         file = BytesIO(file.read()),
-#         filename = file.name,
-#         size = os.path.getsize("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json")
-#     )
-
-# nuchunks = txtchunker.chunk_document(upfile)
-# # with open("dynamicoutput.txt","w") as textcheck:
-# for i in nuchunks:
-#     # textcheck.write(str(i)+"\n")
-#     pprint.pprint(i)
-
-# HTML TEST
-
-with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html", "rb") as file:
+with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json", "rb") as file:
 
     # print(BytesIO(file.read()).read())
 
     upfile = UploadFile(
         file = BytesIO(file.read()),
-        filename = file.name.split("/")[-1],
-        size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html")
+        filename = file.name,
+        size = os.path.getsize("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json")
     )
 
 nuchunks = txtchunker.chunk_document(upfile)
 # with open("dynamicoutput.txt","w") as textcheck:
-print(nuchunks)
-txtchunker._ingest_text(nuchunks,upfile,"txttest", "anthony", "amarna",True)
+#     for i in nuchunks:
+#         # textcheck.write(str(i)+"\n")
+#         pprint.pprint(i)
 
-pprint.pprint(txtchunker.search(query = 'small',txt_collection="txttest",client_id = "anthony",limit=5))
+# HTML TEST
+
+# with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html", "rb") as file:
+
+#     # print(BytesIO(file.read()).read())
+
+#     upfile = UploadFile(
+#         file = BytesIO(file.read()),
+#         filename = file.name.split("/")[-1],
+#         size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html")
+#     )
+#
+# nuchunks = txtchunker.chunk_document(upfile)
+# with open("dynamicoutput.txt","w") as textcheck:
+# print(nuchunks)
+
+# txtchunker._ingest_text(nuchunks,upfile,"txttest", "anthony", "amarna",True)
+
+#TEXT VECTOR SEARCH
+
+pprint.pprint(txtchunker.search(query = "Which music video had the gravity lean?",txt_collection="txttest",client_id = "anthony", bot_id = "amarna",limit=5))
 
 
 

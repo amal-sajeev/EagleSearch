@@ -80,6 +80,8 @@ class EagleSearch:
             device_map="cuda" if torch.cuda.is_available() else "cpu"
         ).eval()
 
+        self.e5model = sentence_transformers.SentenceTransformer('intfloat/multilingual-e5-large')
+
         self.processor = ColQwen2Processor.from_pretrained("vidore/colqwen2-v1.0")
 
         # Initialize Qdrant client
@@ -426,7 +428,7 @@ class EagleSearch:
                     collection_name=collection_name,
                     vectors_config={
                         "txt_vectors": models.VectorParams(
-                            size=128,
+                            size=1024,
                             distance=models.Distance.COSINE,
                             multivector_config=models.MultiVectorConfig(
                                 comparator=models.MultiVectorComparator.MAX_SIM
@@ -856,16 +858,23 @@ class EagleSearch:
 
          # Generate embeddings for text chunks
         embeddings = []
-        for i, chunk in enumerate(chunks):
+        # for i, chunk in enumerate(chunks):
             # Process the text with the processor
-            # Generate embeddings 
-            embedding = self.processor.process_queries(chunk).to(self.model.device)
+            # # Generate embeddings with ColQwen
+            # embedding = self.processor.process_queries(chunk).to(self.model.device)
 
                 
-            # Convert to numpy for Qdrant
-            embedding_np = self.colmodel(**embedding)[0]
-            embedding_np = embedding_np.to(torch.float32).detach().numpy()
-            embeddings.append((i, embedding_np, chunk))
+            # # Convert to numpy for Qdrant
+            # embedding_np = self.colmodel(**embedding)[0]
+            # embedding_np = embedding_np.to(torch.float32).detach().numpy()
+            # embeddings.append((i, embedding_np, chunk))
+        
+        #E5 embedding
+        proembeddings = self.e5model.encode(chunks,prompt="passage:")
+        i=0
+        for chunk,embed in zip(chunks,proembeddings):
+            i+=1
+            embeddings.append((i,embed,chunk))
         
         # Get embedding dimension
         embedding_dimension = embeddings[0][1].shape[0]
@@ -967,6 +976,11 @@ class EagleSearch:
             img_array: array of pdf pages
             text_array: array of text extracts as strings
         """
+
+        #E5 Query embed
+        txtquery_embedding = self.e5model.encode(query,prompt="query:")
+
+        #Qwen Query embed
         processed_query = self.processor.process_queries([query]).to(self.model.device)
         query_embedding = self.colmodel(**processed_query)[0]
         query_embedding = query_embedding.to(torch.float32).detach().cpu().numpy()
@@ -980,7 +994,7 @@ class EagleSearch:
         if txt_collection != "":
             text_response = self.client.query_points(
                 collection_name = txt_collection,
-                query = query_embedding,
+                query = txtquery_embedding,
                 query_filter= models.Filter(
                     must=[
                         models.FieldCondition(
@@ -988,10 +1002,17 @@ class EagleSearch:
                             match = models.MatchValue(
                                 value= client_id
                             )
+                        ),
+                        models.FieldCondition(
+                            key = "bot_id",
+                            match = models.MatchValue(
+                                value = bot_id
+                            )
                         )
                     ]
                 ),
-                using = "txt_vectors"
+                using = "txt_vectors",
+                limit=limit
             )
             for hit in text_response.points:
                 hit.payload["score"] = hit.score
