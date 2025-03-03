@@ -293,7 +293,7 @@ class EagleSearch:
                         process_node(item, context)
             
             process_node(data)
-            return [{"text":chunk, "length":len(chunk)} for chunk in text_chunks if chunk.strip()]
+            return [chunk for chunk in text_chunks if chunk.strip()]
         except Exception as e:
             print(f"Error processing JSON: {e}")
             return []
@@ -766,10 +766,10 @@ class EagleSearch:
         
         if file_extension == ".json":
             # Handle JSON content as before
-            return full_text
-        
-        # Split into sentences
-        sentences = nltk.sent_tokenize(str(full_text))
+            sentences= full_text
+        else:
+            # Split into sentences
+            sentences = nltk.sent_tokenize(str(full_text))
         
         chunks = []
         current_chunk = []
@@ -856,10 +856,8 @@ class EagleSearch:
         #E5 embedding
         pprint.pprint(chunks)
         proembeddings = self.e5model.encode([i["text"] for i in chunks],prompt="passage:")
-        i=0
         for chunk,embed in zip(chunks,proembeddings):
-            i+=1
-            embeddings.append((i,embed,chunk))
+            embeddings.append((str(uuid.uuid4()),embed,chunk))
         
         # Get embedding dimension
         embedding_dimension = embeddings[0][1].shape[0]
@@ -868,13 +866,14 @@ class EagleSearch:
 
         # Prepare points for uploading
         points = []
+        doc_id = str(uuid.uuid4())
         for idx, embedding, text in embeddings:
             points.append(
                 models.PointStruct(
                     id=idx,
                     vector = {"txt_vectors": embedding},
                     payload={
-                        "doc_id": str(uuid.uuid4()),
+                        "doc_id": doc_id,
                         "doc_name": file.filename,
                         "client": client_id,  # Add client_id for search filtering
                         "bot_id": bot_id,     # Add bot_id for search filtering
@@ -1027,6 +1026,46 @@ class EagleSearch:
 
         # return response.points
         return payload
+
+    #Search by document_id
+    def search_by_docid(self, doc_id:str, collection_name:str):
+        """Get the ids of points in a collection that have chunks from a document.
+
+        Args:
+            doc_id (str): UUID of the document
+            collection_name (str): Collection where all the vectors belonging to the document are stored.
+
+        Returns:
+            List[str]: A list of all point IDs. 
+        """
+        pointlist=[]
+        pointnum = 0
+        offset = None
+        while True:
+            points, offset = self.client.scroll(
+            collection_name,
+            scroll_filter= models.Filter(
+                must = [
+                    models.FieldCondition(
+                        key="doc_id",
+                        match = models.MatchValue(value=doc_id)
+                    )
+                ]
+            ),
+            offset=offset
+            )
+            
+            pointlist.extend(points)
+            if not offset:
+                break
+            pointnum += len(points)
+            print(pointnum)
+            print(offset)
+        
+        return(pointlist)
+
+    #Delete vectors
+    # def 
 
     # BYTE TO IMAGE CONVERSION FUNCTIONS ======================================================================
 

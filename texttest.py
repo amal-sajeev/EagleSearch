@@ -14,14 +14,14 @@ txtchunker = EagleSearch(
 
 #JSON TEST
 upfile = []
-with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json", "rb") as file:
+with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/testdata/movie-database.json", "rb") as file:
 
     # print(BytesIO(file.read()).read())
 
     upfilo = UploadFile(
         file = BytesIO(file.read()),
         filename = file.name.split("/")[-1],
-        size = os.path.getsize("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-database.json")
+        size = os.path.getsize("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/testdata/movie-database.json")
     )
     upfile.append(upfilo)
     
@@ -35,14 +35,14 @@ with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/movie-databas
 
 # HTML TEST
 
-with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html", "rb") as file:
+with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/testdata/nanotechnology.html", "rb") as file:
 
     # print(BytesIO(file.read()).read())
 
     upfilo = UploadFile(
         file = BytesIO(file.read()),
         filename = file.name.split("/")[-1],
-        size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnology.html")
+        size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/testdata/nanotechnology.html")
     )
     upfile.append(upfilo)
 
@@ -60,18 +60,24 @@ with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/nanotechnolog
 
 # images=[]
 
-for i in tqdm([1,2,3,4,5,6]):
-    with open(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png","rb") as photo:
-        upfilo = UploadFile(
-            file= BytesIO(photo.read()),
-            filename= photo.name.split("/")[-1],
-            size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png")
-        )
-        upfile.append(upfilo)
-# txtchunker._ingest_photos(images, "imgtest")
-print(upfile)
+# for i in tqdm([1,2,3,4,5,6]):
+#     with open(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png","rb") as photo:
+#         upfilo = UploadFile(
+#             file= BytesIO(photo.read()),
+#             filename= photo.name.split("/")[-1],
+#             size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/phot/{i}.png")
+#         )
+#         upfile.append(upfilo)
+# # txtchunker._ingest_photos(images, "imgtest")
+# print(upfile)
 
-txtchunker.ingest("anthony", "amarna",upfile,"txttest","imgtest")
+# txtchunker.ingest("anthony", "amarna",upfile,"txttest","imgtest")
 
 # print(txtchunker.search(query = 'cat',img_collection="imgtest",limit=1)[0]["doc_name"])
  
+
+ #Delete test
+# pprint.pprint(txtchunker.search_by_docid("636c9d4f-650d-49db-9d39-0bf9ae49532e","txttest"))
+
+for i in txtchunker.search_by_docid("3c105cc2-ee78-4e95-907f-ffe311008a00","qwenufo"):
+    pprint.pprint(i.id)
