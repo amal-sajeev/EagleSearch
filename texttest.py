@@ -79,5 +79,7 @@ with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/testdata/nano
  #Delete test
 # pprint.pprint(txtchunker.search_by_docid("636c9d4f-650d-49db-9d39-0bf9ae49532e","txttest"))
 
-for i in txtchunker.search_by_docid("3c105cc2-ee78-4e95-907f-ffe311008a00","qwenufo"):
-    pprint.pprint(i.id)
+# for i in txtchunker.search_by_docid("3c105cc2-ee78-4e95-907f-ffe311008a00","qwenufo"):
+#     pprint.pprint(i.id)
+
+print(txtchunker.delete_by_docid("3c105cc2-ee78-4e95-907f-ffe311008a00","qwenufo"))

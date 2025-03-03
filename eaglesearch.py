@@ -1064,8 +1064,31 @@ class EagleSearch:
         
         return(pointlist)
 
-    #Delete vectors
-    # def 
+    #Delete vectors (EXPERIMENTAL)
+    def delete_by_docid(self, doc_id:str, collection_name:str):
+        """Delete all points that contain a document ID from a collection.
+
+        Args:
+            doc_id (str): ID of the document to filter by.
+            collection_name (str): Collection to delete points from.
+
+        Returns:
+            int: Number of deleted points.
+        """
+
+        deleted = self.client.delete(
+            collection_name,
+            points_selector = models.Filter(
+                must = [
+                    models.FieldCondition(
+                        key="doc_id",
+                        match = models.MatchValue(value=doc_id)
+                    )
+                ]
+            ))
+        return(deleted)
+
+
 
     # BYTE TO IMAGE CONVERSION FUNCTIONS ======================================================================
 
