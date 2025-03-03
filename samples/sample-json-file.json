@@ -1,0 +1,32 @@
+{
+  "users": [
+    {
+      "id": 1,
+      "name": "John Doe",
+      "email": "john.doe@example.com",
+      "address": {
+        "street": "123 Main St",
+        "city": "New York",
+        "zipcode": "10001"
+      },
+      "active": true
+    },
+    {
+      "id": 2,
+      "name": "Jane Smith",
+      "email": "jane.smith@example.com",
+      "address": {
+        "street": "456 Park Ave",
+        "city": "San Francisco",
+        "zipcode": "94107"
+      },
+      "active": false
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "generated": "2025-03-03",
+    "description": "Sample JSON file for text chunker testing",
+    "notes": "This JSON structure contains nested objects and arrays that can be used to test various parsing scenarios in your text chunker program."
+  }
+}

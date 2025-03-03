@@ -35,13 +35,16 @@ import pprint
 class EagleSearch:
 
     def __init__(self,
+                 vllm_model,
                  qdrant_api_key:str,
                  qdrant_url : str,
-                 max_chunk_size: int = 500,
-                 similarity_threshold: float = 0.3,
-                 embedding_model: str = 'all-MiniLM-L6-v2',
+                 MIN_CHUNK_SIZE = 600,  # Minimum Characters in each chunk
+                 IDEAL_CHUNK_SIZE = 1000,  # Ideal Characters in each chunk
+                 MAX_CHUNK_SIZE = 1200,  # Maximum Characters in each chunk
+                 similarity_threshold: float = 0.3, #Threshold for whether sentence should be added to chunk
+                 chunk_embedding_model: str = 'all-MiniLM-L6-v2', #Small Embedding model for semantic chunking.
                  batch_size: int = 32,
-                 max_cache_size: int = 10000,
+                 max_cache_size: int = 10000
                  ):
         """
         Comprehensive document chunking utility supporting multiple file formats.
@@ -60,10 +63,12 @@ class EagleSearch:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         # Initialize embedding model
-        self.model = sentence_transformers.SentenceTransformer(embedding_model).to(self.device)
+        self.model = sentence_transformers.SentenceTransformer(chunk_embedding_model).to(self.device)
 
         # Chunking parameters
-        self.max_chunk_size = max_chunk_size
+        self.MIN_CHUNK_SIZE = MIN_CHUNK_SIZE  # Characters
+        self.IDEAL_CHUNK_SIZE = IDEAL_CHUNK_SIZE # Characters
+        self.MAX_CHUNK_SIZE = MAX_CHUNK_SIZE # Characters
         self.similarity_threshold = similarity_threshold
         self.batch_size = batch_size
 
@@ -75,11 +80,7 @@ class EagleSearch:
         self._whitespace_pattern = re.compile(r'\s+')
 
          # Initialize VLLM model
-        self.colmodel = ColQwen2.from_pretrained(
-            "vidore/colqwen2-v1.0",
-            torch_dtype=torch.bfloat16,
-            device_map="cuda" if torch.cuda.is_available() else "cpu"
-        ).eval()
+        self.colmodel = vllm_model
 
         self.e5model = sentence_transformers.SentenceTransformer('intfloat/multilingual-e5-large')
 
@@ -588,7 +589,7 @@ class EagleSearch:
         if type(pdf) == str:
             doc = fitz.open(pdf)
         else:
-            doc = fitz.open(stream = pdf.file, filetype = "pdf")
+            doc = fitz.open(stream = pdf.file.read(), filetype = "pdf")
         metadata = doc.metadata
 
         # Clean metadata
@@ -647,7 +648,7 @@ class EagleSearch:
                         collection_name=collection_name,
                         points=batch_points
                     )
-                    print(f"Processed and uploaded pages {batch_start} to {batch_end-1}")
+                    
                 except Exception as e:
                     print(f"Error uploading batch {batch_start}-{batch_end-1}: {str(e)}")
                     # Print the first point's payload for debugging
@@ -760,9 +761,9 @@ class EagleSearch:
         Target chunk size is between 800-1200 characters.
         """
         # Define target chunk size range
-        MIN_CHUNK_SIZE = 600  # Characters
-        IDEAL_CHUNK_SIZE = 1000  # Characters
-        MAX_CHUNK_SIZE = 1500  # Characters
+        MIN_CHUNK_SIZE = self.MIN_CHUNK_SIZE  # Characters
+        IDEAL_CHUNK_SIZE = self.IDEAL_CHUNK_SIZE  # Characters
+        MAX_CHUNK_SIZE = self.MAX_CHUNK_SIZE  # Characters
         
         if file_extension == ".json":
             # Handle JSON content as before
@@ -854,7 +855,6 @@ class EagleSearch:
         # Generate embeddings for text chunks
         embeddings = []
         #E5 embedding
-        pprint.pprint(chunks)
         proembeddings = self.e5model.encode([i["text"] for i in chunks],prompt="passage:")
         for chunk,embed in zip(chunks,proembeddings):
             embeddings.append((str(uuid.uuid4()),embed,chunk))
@@ -862,7 +862,6 @@ class EagleSearch:
         # Get embedding dimension
         embedding_dimension = embeddings[0][1].shape[0]
 
-        print(embedding_dimension)
 
         # Prepare points for uploading
         points = []
@@ -907,7 +906,7 @@ class EagleSearch:
         if type(files) == UploadFile:
             flist.append(files)
         else:
-            flist = files
+            flist.extend(files)
 
         if txt_collection !="":
             self._setup_collection(txt_collection,txt=True)
@@ -917,7 +916,7 @@ class EagleSearch:
         for i in flist:
             
             fformat = i.filename.split(".")[-1]
-            print(fformat)
+            print(i.filename)
             if fformat in txformats:
                 if txt_collection != "":
                     txchunks = self.chunk_document(i)
@@ -1059,8 +1058,6 @@ class EagleSearch:
             if not offset:
                 break
             pointnum += len(points)
-            print(pointnum)
-            print(offset)
         
         return(pointlist)
 
@@ -1087,8 +1084,6 @@ class EagleSearch:
                 ]
             ))
         return(deleted)
-
-
 
     # BYTE TO IMAGE CONVERSION FUNCTIONS ======================================================================
 

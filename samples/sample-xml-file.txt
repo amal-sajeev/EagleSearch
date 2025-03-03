@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<library>
+    <books>
+        <book id="1">
+            <title>The Great Gatsby</title>
+            <author>F. Scott Fitzgerald</author>
+            <year>1925</year>
+            <genre>Classic</genre>
+            <description>
+                The Great Gatsby is a 1925 novel by American writer F. Scott Fitzgerald. Set in the Jazz Age on Long Island, the novel depicts first-person narrator Nick Carraway's interactions with mysterious millionaire Jay Gatsby and Gatsby's obsession to reunite with his former lover, Daisy Buchanan.
+            </description>
+        </book>
+        <book id="2">
+            <title>To Kill a Mockingbird</title>
+            <author>Harper Lee</author>
+            <year>1960</year>
+            <genre>Southern Gothic</genre>
+            <description>
+                To Kill a Mockingbird is a novel by Harper Lee published in 1960. It was immediately successful, winning the Pulitzer Prize, and has become a classic of modern American literature. The plot and characters are loosely based on the author's observations of her family, her neighbors and an event that occurred near her hometown in 1936, when she was 10 years old.
+            </description>
+        </book>
+    </books>
+    <magazines>
+        <magazine id="1">
+            <title>National Geographic</title>
+            <publisher>National Geographic Society</publisher>
+            <frequency>Monthly</frequency>
+            <description>
+                National Geographic is the official magazine of the National Geographic Society. It has been published continuously since its first issue in 1888, nine months after the Society itself was founded.
+            </description>
+        </magazine>
+    </magazines>
+</library>

@@ -1,0 +1,11 @@
+Name,Age,City,Occupation
+John Doe,32,New York,Software Engineer
+Jane Smith,28,San Francisco,Data Scientist
+Robert Johnson,45,Chicago,Marketing Manager
+Emily Williams,36,Boston,Product Designer
+
+Department,Employees,Budget,Location
+Engineering,42,1250000,Building A
+Marketing,18,750000,Building B
+Design,15,500000,Building C
+Operations,24,850000,Building D
