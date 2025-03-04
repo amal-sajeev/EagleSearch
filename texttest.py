@@ -21,16 +21,16 @@ txtchunker = EagleSearch(
 
 #JSON TEST
 upfile = []
-# with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/testdata/movie-database.json", "rb") as file:
+with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/testdata/movie-database.json", "rb") as file:
 
-#     # print(BytesIO(file.read()).read())
+    # print(BytesIO(file.read()).read())
 
-#     upfilo = UploadFile(
-#         file = BytesIO(file.read()),
-#         filename = file.name.split("/")[-1],
-#         size = os.path.getsize("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/testdata/movie-database.json")
-#     )
-#     upfile.append(upfilo)
+    upfilo = UploadFile(
+        file = BytesIO(file.read()),
+        filename = file.name.split("/")[-1],
+        size = os.path.getsize("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/testdata/movie-database.json")
+    )
+    upfile.append(upfilo)
     
 # print(upfile.filename.split(".")[-1])
 # nuchunks = txtchunker.chunk_document(upfile)
@@ -42,16 +42,16 @@ upfile = []
 
 # HTML TEST
 
-# with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/testdata/nanotechnology.html", "rb") as file:
+with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/testdata/nanotechnology.html", "rb") as file:
 
-#     # print(BytesIO(file.read()).read())
+    # print(BytesIO(file.read()).read())
 
-#     upfilo = UploadFile(
-#         file = BytesIO(file.read()),
-#         filename = file.name.split("/")[-1],
-#         size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/testdata/nanotechnology.html")
-#     )
-#     upfile.append(upfilo)
+    upfilo = UploadFile(
+        file = BytesIO(file.read()),
+        filename = file.name.split("/")[-1],
+        size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/testdata/nanotechnology.html")
+    )
+    upfile.append(upfilo)
 
 # nuchunks = txtchunker.chunk_document(upfile)
 # with open("dynamicoutput.txt","w") as textcheck:
@@ -90,7 +90,7 @@ with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/samples/sampl
 # # txtchunker._ingest_photos(images, "imgtest")
 # print(upfile)
 
-txtchunker.ingest("anthony", "amarna",upfile,"txttest","imgtest")
+pprint.pprint(txtchunker.ingest("anthony", "amarna",upfile,"txttest","imgtest"))
 
 # print(txtchunker.search(query = 'cat',img_collection="imgtest",limit=1)[0]["doc_name"])
  

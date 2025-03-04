@@ -671,7 +671,7 @@ class EagleSearch:
                         print(batch_points[0].payload)
 
         doc.close()
-        return(total_pages)
+        return({pdf.filename:{"id": doc_id, "collection": collection_name}})
 
     def _ingest_photos(self, images: Union[List[UploadFile], UploadFile], collection_name: str = ""):
         """Processes and embeds JPEG and PNG files
@@ -686,6 +686,7 @@ class EagleSearch:
             temp = []
             temp.append(images)
             images = temp
+        retlist = {}
         for itimage in images:
             try:
                 #Convert BytesIO image to PIL Image
@@ -712,7 +713,7 @@ class EagleSearch:
                             }
                         )
                 point_batch.append(point)
-
+                retlist.update({itimage.filename:{"id": point.id, "collection": collection_name}})
             except Exception as e:
                         print(f"Error processing image {itimage.filename}: {str(e)}")
                         continue
@@ -721,7 +722,7 @@ class EagleSearch:
                 collection_name= collection_name,
                 points = point_batch
             )
-            return(len(images))
+            return(retlist)
         except Exception as e:
                     print(f"Error uploading batch: {str(e)}")
                     # Print the first point's payload for debugging
@@ -875,7 +876,6 @@ class EagleSearch:
         # Get embedding dimension
         embedding_dimension = embeddings[0][1].shape[0]
 
-
         # Prepare points for uploading
         points = []
         doc_id = str(uuid.uuid4())
@@ -901,7 +901,7 @@ class EagleSearch:
             points=points
         )
         
-        return len(points)
+        return({file.filename:{"id": doc_id, "collection": collection_name}})
             
     #   Main Ingestion function
     def ingest(self, client_id, bot_id, files: Union[UploadFile,List[UploadFile]], txt_collection:str = "", img_collection:str = ""):
@@ -914,7 +914,7 @@ class EagleSearch:
         """
         imgformats = ["png","jpg","pdf"]
         txformats = ['txt','docx','md','csv','json','html','xml','epub','log']
-
+        retlist = {}
         flist = [] 
         if type(files) == UploadFile:
             flist.append(files)
@@ -932,30 +932,31 @@ class EagleSearch:
             if fformat in txformats:
                 if txt_collection != "":
                     txchunks = self.chunk_document(i)
-                    self._ingest_text(
+                    retlist.update(self._ingest_text(
                         chunks =txchunks,
                         file = i,
                         collection_name= txt_collection,
                         client_id= client_id,
                         bot_id = bot_id,
-                    batch_size=5)
+                    batch_size=5))
             elif fformat in imgformats:
                 if img_collection != "":
                     
                     if fformat == "pdf":
                         print("pdf check passed")
-                        self._ingest_pdf(
+                        retlist.update(self._ingest_pdf(
                             pdf=i,
                             collection_name= img_collection,
-                            batch_size=5)
+                            batch_size=5))
                     else:
                         print("png check passed")
-                        self._ingest_photos(
+                        retlist.update(self._ingest_photos(
                             images = i,
                             collection_name=img_collection
-                            )
+                            ))
             else:
                 raise ValueError(f"Unsupported file type: {fformat}")
+        return(retlist)
 
     def search(self, query, limit=10, prefetch_limit=100, client_id="", bot_id="", txt_collection:str="", img_collection:str=""):
         """Retuns an array of strings of image data and an array of text of the matching pages.
