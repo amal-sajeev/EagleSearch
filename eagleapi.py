@@ -81,3 +81,10 @@ def query(query:str, imgcollection:str="", txtcollection:str="", client:str="", 
     except Exception as e:
         print(f"ERROR QUERYING ON {datetime.now().strftime('%Y_%m_%d')} WITH QUERY [{query}] AT COLLECTIONS {imgcollection},{txtcollection} : {e}")
         return(f"ERRR:{str(e)}")
+
+@app.get("/cols")
+def get_all_cols():
+    try:
+        return(eagle.get_collections())
+    except Exception as e:
+        print(f"ERROR GETTING ALL COLLECTIONS ON {datetime.now().strftime('%Y_%m_%d')}: {e}")

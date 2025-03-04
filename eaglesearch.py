@@ -1101,7 +1101,12 @@ class EagleSearch:
             ))
         return(deleted)
 
-    # BYTE TO IMAGE CONVERSION FUNCTIONS ======================================================================
+    #Get all collections
+    def get_collections(self):
+        collection_list = self.client.get_collections()
+        return(collection_list)
+
+# BYTE TO IMAGE CONVERSION FUNCTIONS ======================================================================
 
     def base64_to_image(self, base64_string):
         """
@@ -1136,4 +1141,4 @@ class EagleSearch:
             """
             img = self.base64_to_image(base64_string)
             img.save(output_path)
- 
+    
