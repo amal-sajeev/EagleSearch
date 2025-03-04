@@ -30,7 +30,7 @@ eagle = EagleSearch(
 app = FastAPI()
 
 @app.post("/ingest")
-def ingest(files: Union[UploadFile,list[UploadFile]], client:str, bot:str, txt_collection:str, img_collection:str):
+def ingest(files: Union[list[UploadFile],UploadFile], client:str, bot:str, txt_collection:str, img_collection:str):
 
     try:
         return(eagle.ingest(
@@ -66,3 +66,5 @@ def searchdoc(docid:str,collection:str):
         print(f"ERROR SEARCHING POINTS ON {datetime.now().strftime('%Y_%m_%d')} AT COLLECTION {collection} : {e}")
         return(f"ERRR:{str(e)}")
 
+# @app.get("/query")
+# def query(query:str, imgcollection:str, txtcollection:str):

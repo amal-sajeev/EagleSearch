@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import logging
+import tempfile
 import os
 import re
 import uuid
@@ -164,7 +165,7 @@ class EagleSearch:
         try:
             content = file.file.read()
             # Use StringIO to create file-like object for pandas
-            df = pd.read_csv(file_path).decode("utf-8", errors="replace")
+            df = pd.read_csv(io.StringIO(content.decode("utf-8", errors="replace")))
 
             # Convert all columns to string and concatenate
             text_content = ' '.join(df.apply(lambda row: ' '.join(row.astype(str)), axis=1))
@@ -197,44 +198,48 @@ class EagleSearch:
 
         return np.max(similarities) < self.similarity_threshold
 
-    def _extract_text_from_docx(self, docx_path: str) -> str:
+    def _extract_text_from_docx(self, file: UploadFile) -> str:
         """
         Efficiently extract plain text from a .docx file.
-
+        
         Args:
-            docx_path (str): Path to the .docx file
-
+            file (UploadFile): Uploaded .docx file
+        
         Returns:
             str: Extracted plain text with structural preservation
         """
-        # Use context manager for efficient file handling
-        with zipfile.ZipFile(docx_path) as zip_file:
+        content = file.file.read()
+        
+        # Create a BytesIO object to work with zipfile
+        docx_bytes = io.BytesIO(content)
+        
+        with zipfile.ZipFile(docx_bytes) as zip_file:
             # Directly read XML content
             xml_content = zip_file.read('word/document.xml').decode("utf-8", errors="replace")
-
+            
             # Efficient XML namespace handling
             namespace = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
-
-            #[EXPERIMENTAL] Using a parser to fix UTF-8 errors
+            
+            # Using a parser to fix UTF-8 errors
             parser = ET.XMLParser(encoding="UTF-8")
-
+            
             # Use efficient XML parsing
-            tree = ET.fromstring(xml_content, parser = parser)
-
+            tree = ET.fromstring(xml_content, parser=parser)
+            
             # Efficient text extraction
             text_parts = []
             for para in tree.findall('.//w:p', namespaces=namespace):
                 para_text = [
-                    run.text for run in para.findall('.//w:t', namespaces=namespace)
+                    run.text for run in para.findall('.//w:t', namespaces=namespace) 
                     if run.text
                 ]
-
+                
                 # Join paragraph text efficiently
                 full_para = ' '.join(para_text).strip()
                 if full_para:
                     text_parts.append(full_para)
-
-            return ' '.join(text_parts)
+        
+        return ' '.join(text_parts)
 
     def _extract_text_from_json(self,file: UploadFile) -> list[str]:
         """
@@ -348,15 +353,24 @@ class EagleSearch:
             str: Extracted text from EPUB
         """
         try:
-            content = file.file.read()
-            epub_bytes = io.BytesIO(content)
-            book = epub.read_epub(epub_bytes)
+            # Save the uploaded file to a temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.epub') as temp_file:
+                content = file.file.read()
+                temp_file.write(content)
+                temp_path = temp_file.name
+            
+            # Use the temporary file path to read the epub
+            book = epub.read_epub(temp_path)
+            
+            # Process the book content
             text_content = []
-
             for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
                 soup = BeautifulSoup(item.get_content(), 'html.parser')
                 text_content.append(soup.get_text())
-
+            
+            # Clean up the temporary file
+            os.unlink(temp_path)
+            
             return ' '.join(text_content)
         except Exception as e:
             self.logger.error(f"Error processing EPUB: {e}")
@@ -625,7 +639,7 @@ class EagleSearch:
                         payload={
                             "doc_id" : doc_id,
                             "page_id": f"{doc_id}_{page_num}",
-                            "doc_name": doc.name.split("/")[-1],
+                            "doc_name": pdf.filename.split("/")[-1],
                             "page_number": page_num,
                             "metadata": metadata,
                             "text_content": text_data,
@@ -668,7 +682,7 @@ class EagleSearch:
         self._setup_collection(collection_name)
 
         point_batch = []
-        if type(images) == UploadFile:
+        if type(images) != list:
             temp = []
             temp.append(images)
             images = temp
@@ -851,7 +865,6 @@ class EagleSearch:
             batch_size (int, optional): Batch size for parallel uploading. Defaults to 4.
         """
         self._setup_collection(collection_name, True)
-
         # Generate embeddings for text chunks
         embeddings = []
         #E5 embedding
@@ -916,7 +929,6 @@ class EagleSearch:
         for i in flist:
             
             fformat = i.filename.split(".")[-1]
-            print(i.filename)
             if fformat in txformats:
                 if txt_collection != "":
                     txchunks = self.chunk_document(i)

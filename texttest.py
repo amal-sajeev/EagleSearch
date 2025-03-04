@@ -59,14 +59,14 @@ upfile = []
 
 #DOCS TEST
 
-with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/samples/sample-docx.file.docx", "rb") as file:
+with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/samples/sample.docx", "rb") as file:
 
     # print(BytesIO(file.read()).read())
 
     upfilo = UploadFile(
         file = BytesIO(file.read()),
         filename = file.name.split("/")[-1],
-        size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/samples/sample-docx.file.docx")
+        size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/samples/sample.docx")
     )
     upfile.append(upfilo)
 
