@@ -371,7 +371,7 @@ class EagleSearch:
             # Clean up the temporary file
             os.unlink(temp_path)
             
-            return ' '.join(text_content)
+            return ' '.join(text_content).replace("\n"," ")
         except Exception as e:
             self.logger.error(f"Error processing EPUB: {e}")
             return ""
@@ -957,64 +957,65 @@ class EagleSearch:
             else:
                 raise ValueError(f"Unsupported file type: {fformat}")
 
-    def search(self, query, limit=10, prefetch_limit=100, client_id = "", bot_id ="", txt_collection:str = "", img_collection:str=""):
+    def search(self, query, limit=10, prefetch_limit=100, client_id="", bot_id="", txt_collection:str="", img_collection:str=""):
         """Retuns an array of strings of image data and an array of text of the matching pages.
-
         Args:
             query (_type_): The text content of the query.
             limit (int, optional): Number of results to return. Defaults to 10.
             prefetch_limit (int, optional): Number of results to fetch from the compressed vector data before reranking. Higher means slower. Defaults to 100.
-
         Returns:
-            img_array: array of pdf pages
-            text_array: array of text extracts as strings
+            payload: array of payload items with matching content
         """
-
-        #E5 Query embed
-        txtquery_embedding = self.e5model.encode(query,prompt="query:")
-
-        #Qwen Query embed
-        processed_query = self.processor.process_queries([query]).to(self.model.device)
-        query_embedding = self.colmodel(**processed_query)[0]
-        query_embedding = query_embedding.to(torch.float32).detach().cpu().numpy()
-
-        n=1
         payload = []
-
-
-        #crafting the query filter for client and bot
-        # query
+        filterstring = []
+        
+        # Build filter conditions
+        if client_id != "":
+            filterstring.append(models.FieldCondition(
+                key="client",
+                match=models.MatchValue(
+                    value=client_id
+                )
+            ))
+        
+        if bot_id != "":
+            filterstring.append(models.FieldCondition(
+                key="bot_id",
+                match=models.MatchValue(
+                    value=bot_id
+                )
+            ))
+        
+        # Only compute embeddings if needed
         if txt_collection != "":
+            # E5 Query embed
+            txtquery_embedding = self.e5model.encode(query, prompt="query:")
+            
+            # Query text collection with appropriate vector
             text_response = self.client.query_points(
-                collection_name = txt_collection,
-                query = txtquery_embedding,
-                query_filter= models.Filter(
-                    must=[
-                        models.FieldCondition(
-                            key = "client",
-                            match = models.MatchValue(
-                                value= client_id
-                            )
-                        ),
-                        models.FieldCondition(
-                            key = "bot_id",
-                            match = models.MatchValue(
-                                value = bot_id
-                            )
-                        )
-                    ]
-                ),
-                using = "txt_vectors",
-                limit=limit
+                collection_name=txt_collection,
+                query=txtquery_embedding,
+                query_filter=models.Filter(must=filterstring) if filterstring else None,
+                using="txt_vectors",  # Make sure this vector exists in txt_collection
+                limit=limit,
+                with_payload=True
             )
+            
             for hit in text_response.points:
                 hit.payload["score"] = hit.score
                 payload.append(hit.payload)
-
+        
         if img_collection != "":
+            # Qwen Query embed
+            processed_query = self.processor.process_queries([query]).to(self.model.device)
+            query_embedding = self.colmodel(**processed_query)[0]
+            query_embedding = query_embedding.to(torch.float32).detach().cpu().numpy()
+            
+            # Query image collection with appropriate vectors
             img_response = self.client.query_points(
                 collection_name=img_collection,
                 query=query_embedding,
+                query_filter=models.Filter(must=filterstring) if filterstring else None,
                 prefetch=[
                     models.Prefetch(
                         query=query_embedding,
@@ -1031,11 +1032,13 @@ class EagleSearch:
                 with_payload=True,
                 using="original"
             )
+            
             for hit in img_response.points:
                 hit.payload["score"] = hit.score
                 payload.append(hit.payload)
+        
+        payload.sort(key = lambda x:x["score"],reverse=True)
 
-        # return response.points
         return payload
 
     #Search by document_id

@@ -66,5 +66,18 @@ def searchdoc(docid:str,collection:str):
         print(f"ERROR SEARCHING POINTS ON {datetime.now().strftime('%Y_%m_%d')} AT COLLECTION {collection} : {e}")
         return(f"ERRR:{str(e)}")
 
-# @app.get("/query")
-# def query(query:str, imgcollection:str, txtcollection:str):
+@app.get("/query")
+def query(query:str, imgcollection:str="", txtcollection:str="", client:str="", bot:str="", limit=10, prefetch = 100):
+    try:
+        return(eagle.search(
+            query = query,
+            limit=limit,
+            prefetch_limit=prefetch,
+            client_id = client,
+            bot_id =bot,
+            txt_collection = txtcollection,
+            img_collection = imgcollection
+        ))
+    except Exception as e:
+        print(f"ERROR QUERYING ON {datetime.now().strftime('%Y_%m_%d')} WITH QUERY [{query}] AT COLLECTIONS {imgcollection},{txtcollection} : {e}")
+        return(f"ERRR:{str(e)}")
