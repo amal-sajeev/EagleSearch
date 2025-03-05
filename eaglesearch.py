@@ -98,43 +98,6 @@ class EagleSearch:
                             format='%(asctime)s - %(levelname)s - %(message)s')
         self.logger = logging.getLogger(__name__)
 
-    def _hash_sentence(self, sentence: str) -> str:
-        """Create a stable hash for sentence caching."""
-        normalized = self._whitespace_pattern.sub(' ', sentence.strip())
-        return hashlib.md5(normalized.encode('utf-8')).hexdigest()
-
-    def _cached_embed(self, sentences: List[str]) -> np.ndarray:
-        """Cached embedding with batch processing and GPU acceleration."""
-        # (Previous implementation remains the same)
-        cache_keys = [self._hash_sentence(s) for s in sentences]
-        cached_embeddings = [self.embedding_cache.get(key) for key in cache_keys]
-
-        needs_embedding = [
-            (i, s) for i, (s, emb) in enumerate(zip(sentences, cached_embeddings))
-            if emb is None
-        ]
-
-        if needs_embedding:
-            batch_sentences = [s for _, s in needs_embedding]
-            batch_embeddings = self.model.encode(
-                batch_sentences,
-                batch_size=self.batch_size,
-                convert_to_numpy=True,
-                device=self.device
-            )
-
-            for (_, sentence), embedding in zip(needs_embedding, batch_embeddings):
-                key = self._hash_sentence(sentence)
-                self.embedding_cache[key] = embedding
-
-                if len(self.embedding_cache) > self.max_cache_size:
-                    oldest_key = next(iter(self.embedding_cache))
-                    del self.embedding_cache[oldest_key]
-
-        return np.array([
-            self.embedding_cache[key] if key in self.embedding_cache else None
-            for key in cache_keys
-        ])
 
     def _extract_text_from_markdown(self, file: UploadFile) -> str:
         """
