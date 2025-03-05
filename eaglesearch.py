@@ -632,7 +632,7 @@ class EagleSearch:
                     buffered = BytesIO()
                     image.save(buffered,format="PNG")
                     # Create point structure for this page
-                    metadata["page_image"] = base64.b64encode(buffered.getvalue()).decode()
+                    
                     point = models.PointStruct(
                         id= str(uuid.uuid4()),
                         vector=vectors,
@@ -642,6 +642,7 @@ class EagleSearch:
                             "doc_name": pdf.filename.split("/")[-1],
                             "page_number": page_num,
                             "metadata": metadata,
+                            "page_image" : base64.b64encode(buffered.getvalue()).decode(),
                             "text_content": text_data,
                             "page_dimensions": {
                                 "width": float(page.rect.width),
@@ -1037,7 +1038,9 @@ class EagleSearch:
             for hit in img_response.points:
                 hit.payload["score"] = hit.score
                 payload.append(hit.payload)
-        
+        for i in payload:
+            if i["score"] <1.0:
+                i["score"]*=10
         payload.sort(key = lambda x:x["score"],reverse=True)
 
         return payload
@@ -1108,37 +1111,36 @@ class EagleSearch:
 
 # BYTE TO IMAGE CONVERSION FUNCTIONS ======================================================================
 
-    def base64_to_image(self, base64_string):
+def base64_to_image(base64_string):
+    """
+    Convert a base64 string to an image file
+
+    Parameters:
+    base64_string (str): The base64 encoded image string
+
+    Returns:
+    PIL.Image: The decoded image
+    """
+    # Remove the data URL prefix if it exists
+    if ',' in base64_string:
+        base64_string = base64_string.split(',')[1]
+
+    # Decode the base64 string
+    img_data = base64.b64decode(base64_string)
+
+    # Create an image object from the decoded data
+    img = Image.open(io.BytesIO(img_data))
+
+    return img
+
+# Example usage:
+def save_image(base64_string, output_path):
         """
-        Convert a base64 string to an image file
+        Convert base64 string to image and save to file
 
         Parameters:
         base64_string (str): The base64 encoded image string
-
-        Returns:
-        PIL.Image: The decoded image
+        output_path (str): Path where the image should be saved
         """
-        # Remove the data URL prefix if it exists
-        if ',' in base64_string:
-            base64_string = base64_string.split(',')[1]
-
-        # Decode the base64 string
-        img_data = base64.b64decode(base64_string)
-
-        # Create an image object from the decoded data
-        img = Image.open(io.BytesIO(img_data))
-
-        return img
-
-    # Example usage:
-    def save_image(self,base64_string, output_path):
-            """
-            Convert base64 string to image and save to file
-
-            Parameters:
-            base64_string (str): The base64 encoded image string
-            output_path (str): Path where the image should be saved
-            """
-            img = self.base64_to_image(base64_string)
-            img.save(output_path)
-    
+        img = self.base64_to_image(base64_string)
+        img.save(output_path)
