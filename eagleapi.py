@@ -32,17 +32,24 @@ app = FastAPI()
 @app.post("/ingest")
 def ingest(files: Union[list[UploadFile],UploadFile], client:str, bot:str, txt_collection:str, img_collection:str):
 
-    try:
-        return(eagle.ingest(
+    return(eagle.ingest(
             client_id= client,
             bot_id = bot,
             files = files,
             txt_collection = txt_collection,
             img_collection= img_collection
         ))
-    except Exception as e:
-        print(f"ERROR UPLOADING FILE ON {datetime.now().strftime('%Y_%m_%d')} : {e}")
-        return(f"ERROR: {str(e)}")
+    # try:
+    #     return(eagle.ingest(
+    #         client_id= client,
+    #         bot_id = bot,
+    #         files = files,
+    #         txt_collection = txt_collection,
+    #         img_collection= img_collection
+    #     ))
+    # except Exception as e:
+    #     print(f"ERROR UPLOADING FILE ON {datetime.now().strftime('%Y_%m_%d')} : {e}")
+    #     return(f"ERROR: {str(e)}")
 
 @app.post("/delete")
 def delete(docid:str, collection:str):

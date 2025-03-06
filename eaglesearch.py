@@ -138,29 +138,6 @@ class EagleSearch:
             self.logger.error(f"Error processing CSV: {e}")
             return ""
 
-    def _check_semantic_drift(self,
-                               current_embedding: np.ndarray,
-                               chunk_embeddings: List[np.ndarray]) -> bool:
-        """
-        Detect semantic drift using cosine similarity.
-
-        Args:
-            current_embedding (np.ndarray): Embedding of current sentence
-            chunk_embeddings (List[np.ndarray]): Embeddings in current chunk
-
-        Returns:
-            bool: Whether semantic drift has occurred
-        """
-        if not chunk_embeddings:
-            return False
-
-        similarities = cosine_similarity(
-            [current_embedding],
-            chunk_embeddings
-        )[0]
-
-        return np.max(similarities) < self.similarity_threshold
-
     def _extract_text_from_docx(self, file: UploadFile) -> str:
         """
         Efficiently extract plain text from a .docx file.
@@ -694,6 +671,66 @@ class EagleSearch:
                         print("First point payload sample:")
                         print(point_batch[0].payload)
 
+    def _hash_sentence(self, sentence: str) -> str:
+        """Create a stable hash for sentence caching."""
+        normalized = self._whitespace_pattern.sub(' ', sentence.strip())
+        return hashlib.md5(normalized.encode('utf-8')).hexdigest()
+    
+    def _cached_embed(self, sentences: List[str]) -> np.ndarray:
+        """Cached embedding with batch processing and GPU acceleration."""
+        cache_keys = [self._hash_sentence(s) for s in sentences]
+        cached_embeddings = [self.embedding_cache.get(key) for key in cache_keys]
+        
+        needs_embedding = [
+            (i, s) for i, (s, emb) in enumerate(zip(sentences, cached_embeddings)) 
+            if emb is None
+        ]
+        
+        if needs_embedding:
+            batch_sentences = [s for _, s in needs_embedding]
+            batch_embeddings = self.model.encode(
+                batch_sentences, 
+                batch_size=self.batch_size, 
+                convert_to_numpy=True,
+                device=self.device
+            )
+            
+            for (_, sentence), embedding in zip(needs_embedding, batch_embeddings):
+                key = self._hash_sentence(sentence)
+                self.embedding_cache[key] = embedding
+                
+                if len(self.embedding_cache) > self.max_cache_size:
+                    oldest_key = next(iter(self.embedding_cache))
+                    del self.embedding_cache[oldest_key]
+        
+        return np.array([
+            self.embedding_cache[key] if key in self.embedding_cache else None 
+            for key in cache_keys
+        ])
+
+    def _check_semantic_drift(self, 
+                             current_embedding: np.ndarray, 
+                             chunk_embeddings: List[np.ndarray]) -> bool:
+        """
+        Detect semantic drift using cosine similarity.
+        
+        Args:
+            current_embedding (np.ndarray): Embedding of current sentence
+            chunk_embeddings (List[np.ndarray]): Embeddings in current chunk
+        
+        Returns:
+            bool: Whether semantic drift has occurred
+        """
+        if not chunk_embeddings:
+            return False
+        
+        similarities = cosine_similarity(
+            [current_embedding], 
+            chunk_embeddings
+        )[0]
+        
+        return np.max(similarities) < self.similarity_threshold
+
     def chunk_document(self, file: UploadFile) -> List[Dict[str, Any]]:
         """
         Universal document chunking method supporting multiple file types.
@@ -705,7 +742,7 @@ class EagleSearch:
             List of chunk dictionaries with rich metadata
         """
         # Determine file type and extract text
-        file_extension = os.path.splitext(file.filename)[1].lower()
+        file_extension =  os.path.splitext(file.filename)[1].lower()
 
         # Text extraction mapping
         extraction_methods = {
@@ -731,22 +768,123 @@ class EagleSearch:
             self.logger.error(f"Error extracting text: {e}")
             return []
         
-        # Use balanced chunking approach
-        return self._balanced_chunking(full_text, file_extension)
+        # Use semantic chunking approach
+        if file_extension == "json":
+            return self._balanced_chunking(full_text, file_extension)
+        return self._semantic_chunking(full_text, file_extension)
 
+    def _semantic_chunking(self, full_text, file_extension) -> List[Dict[str, Any]]:
+        """
+        Creates chunks based on semantic similarity while maintaining reasonable size.
+        Target chunk size is between MIN_CHUNK_SIZE and MAX_CHUNK_SIZE characters.
+        """
+        if file_extension == ".json":
+            # Handle JSON content
+            sentences = full_text
+        else:
+            # Split into sentences
+            sentences = nltk.sent_tokenize(str(full_text))
+        
+        chunks = []
+        current_chunk = []
+        current_chunk_size = 0
+        current_chunk_embeddings = []
+        
+        # Get embeddings for all sentences
+        all_embeddings = self._cached_embed(sentences)
+        
+        for i, (sentence, embedding) in enumerate(zip(sentences, all_embeddings)):
+            sentence_len = len(sentence)
+            
+            # Handle exceptionally long sentences
+            if sentence_len > self.MAX_CHUNK_SIZE:
+                # If we have content in the current chunk, add it first
+                if current_chunk:
+                    chunk_text = ' '.join(current_chunk)
+                    chunks.append({
+                        'text': chunk_text,
+                        'length': len(chunk_text),
+                        'embeddings': current_chunk_embeddings
+                    })
+                    current_chunk = []
+                    current_chunk_size = 0
+                    current_chunk_embeddings = []
+                
+                # Split the long sentence at reasonable points
+                split_points = [match.start() for match in re.finditer(r'[.!?:;,] ', sentence)]
+                split_points = [p for p in split_points if p > self.MIN_CHUNK_SIZE and p < self.MAX_CHUNK_SIZE] + [len(sentence)]
+                
+                start = 0
+                for end in split_points:
+                    if end - start > self.MIN_CHUNK_SIZE or end == split_points[-1]:
+                        sub_sentence = sentence[start:end].strip()
+                        sub_embedding = self._cached_embed([sub_sentence])[0]
+                        chunks.append({
+                            'text': sub_sentence,
+                            'length': end - start,
+                            'embeddings': [sub_embedding]
+                        })
+                        start = end + 1
+                        
+                        if start >= len(sentence):
+                            break
+                
+                continue
+            
+            # Check for semantic drift if we're approaching the ideal chunk size
+            semantic_drift = False
+            if current_chunk_size >= self.IDEAL_CHUNK_SIZE * 0.75:
+                semantic_drift = self._check_semantic_drift(embedding, current_chunk_embeddings)
+            
+            # Create a new chunk if:
+            # 1. Adding this sentence would exceed MAX_CHUNK_SIZE, or
+            # 2. We're already at IDEAL_CHUNK_SIZE and detected semantic drift, or
+            # 3. We've exceeded IDEAL_CHUNK_SIZE
+            if ((current_chunk_size + sentence_len > self.MAX_CHUNK_SIZE) or 
+                (current_chunk_size >= self.IDEAL_CHUNK_SIZE and semantic_drift) or
+                (current_chunk_size > self.IDEAL_CHUNK_SIZE * 1.2)):
+                
+                if current_chunk:
+                    chunk_text = ' '.join(current_chunk)
+                    chunks.append({
+                        'text': chunk_text,
+                        'length': len(chunk_text),
+                        'embeddings': current_chunk_embeddings
+                    })
+                    current_chunk = []
+                    current_chunk_size = 0
+                    current_chunk_embeddings = []
+            
+            # Add the current sentence to the chunk
+            current_chunk.append(sentence)
+            current_chunk_size += sentence_len + (1 if len(current_chunk) > 1 else 0)  # Add space
+            current_chunk_embeddings.append(embedding)
+        
+        # Add the final chunk if there's content
+        if current_chunk:
+            chunk_text = ' '.join(current_chunk)
+            chunks.append({
+                'text': chunk_text,
+                'length': len(chunk_text),
+                'embeddings': current_chunk_embeddings
+            })
+        
+        # Remove embeddings from final output to reduce size
+        for chunk in chunks:
+            chunk.pop('embeddings', None)
+        
+        return chunks
+    
     def _balanced_chunking(self, full_text, file_extension) -> List[Dict[str, Any]]:
         """
         Creates balanced chunks that preserve context while maintaining reasonable size.
-        Target chunk size is between 800-1200 characters.
+        Target chunk size is between MIN_CHUNK_SIZE and MAX_CHUNK_SIZE characters.
         """
         # Define target chunk size range
-        MIN_CHUNK_SIZE = self.MIN_CHUNK_SIZE  # Characters
-        IDEAL_CHUNK_SIZE = self.IDEAL_CHUNK_SIZE  # Characters
-        MAX_CHUNK_SIZE = self.MAX_CHUNK_SIZE  # Characters
         
         if file_extension == ".json":
             # Handle JSON content as before
-            sentences= full_text
+            sentences = full_text
         else:
             # Split into sentences
             sentences = nltk.sent_tokenize(str(full_text))
@@ -759,7 +897,7 @@ class EagleSearch:
             sentence_len = len(sentence)
             
             # Handle exceptionally long sentences
-            if sentence_len > MAX_CHUNK_SIZE:
+            if sentence_len > self.MAX_CHUNK_SIZE:
                 # If we have content in the current chunk, add it first
                 if current_chunk:
                     chunk_text = ' '.join(current_chunk)
@@ -772,11 +910,11 @@ class EagleSearch:
                 
                 # Split the long sentence at reasonable points (e.g., punctuation, spaces)
                 split_points = [match.start() for match in re.finditer(r'[.!?:;,] ', sentence)]
-                split_points = [p for p in split_points if p > MIN_CHUNK_SIZE and p < MAX_CHUNK_SIZE] + [len(sentence)]
+                split_points = [p for p in split_points if p > self.MIN_CHUNK_SIZE and p < self.MAX_CHUNK_SIZE] + [len(sentence)]
                 
                 start = 0
                 for end in split_points:
-                    if end - start > MIN_CHUNK_SIZE or end == split_points[-1]:
+                    if end - start > self.MIN_CHUNK_SIZE or end == split_points[-1]:
                         chunks.append({
                             'text': sentence[start:end].strip(),
                             'length': end - start
@@ -790,10 +928,10 @@ class EagleSearch:
                 continue
             
             # For normal-sized sentences
-            if current_chunk_size + sentence_len > IDEAL_CHUNK_SIZE:
+            if current_chunk_size + sentence_len > self.IDEAL_CHUNK_SIZE:
                 # If adding this sentence would exceed MAX_CHUNK_SIZE or we're already above IDEAL_CHUNK_SIZE
-                if (current_chunk_size + sentence_len > MAX_CHUNK_SIZE or 
-                    current_chunk_size >= IDEAL_CHUNK_SIZE):
+                if (current_chunk_size + sentence_len > self.MAX_CHUNK_SIZE or 
+                    current_chunk_size >= self.IDEAL_CHUNK_SIZE):
                     # Create a chunk with current content
                     if current_chunk:
                         chunk_text = ' '.join(current_chunk)
@@ -896,6 +1034,7 @@ class EagleSearch:
             if fformat in txformats:
                 if txt_collection != "":
                     txchunks = self.chunk_document(i)
+                    print(txchunks)
                     retlist.update(self._ingest_text(
                         chunks =txchunks,
                         file = i,
