@@ -379,7 +379,7 @@ class EagleSearch:
             self.client.get_collection(collection_name)
         except:
             if txt == True:
-                self.client.create_collection(
+                return(self.client.create_collection(
                     collection_name=collection_name,
                     vectors_config={
                         "txt_vectors": models.VectorParams(
@@ -391,9 +391,9 @@ class EagleSearch:
                             hnsw_config=models.HnswConfigDiff(m=0)
                         )
                     }
-                )
+                ))
             else:
-                self.client.create_collection(
+                return(self.client.create_collection(
                     collection_name=collection_name,
                     vectors_config={
                         "original": models.VectorParams(
@@ -419,7 +419,13 @@ class EagleSearch:
                             )
                         )
                     }
-                )
+                ))
+
+    def _find_collection(self, collection_name):
+        return(self.client.get_collection(collection_name))
+
+    def _delete_collection(self, collection_name):
+        return(self.client.delete_collection(collection_name))
 
     def _clean_text_data(self, text_data):
         """Clean text data to ensure it's JSON serializable"""
@@ -786,7 +792,7 @@ class EagleSearch:
             sentences = nltk.sent_tokenize(str(full_text))
         
         chunks = []
-        current_chunk = []
+        current_chunk = [] 
         current_chunk_size = 0
         current_chunk_embeddings = []
         

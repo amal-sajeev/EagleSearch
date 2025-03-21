@@ -30,7 +30,7 @@ eagle = EagleSearch(
 app = FastAPI()
 
 @app.post("/ingest")
-def ingest(files: Union[list[UploadFile],UploadFile], client:str, bot:str, txt_collection:str, img_collection:str):
+def Embed_and_ingest_files(files: Union[list[UploadFile],UploadFile], client:str, bot:str, txt_collection:str, img_collection:str):
 
     return(eagle.ingest(
             client_id= client,
@@ -52,7 +52,7 @@ def ingest(files: Union[list[UploadFile],UploadFile], client:str, bot:str, txt_c
     #     return(f"ERROR: {str(e)}")
 
 @app.post("/delete")
-def delete(docid:str, collection:str):
+def Delete_documents_by_ID(docid:str, collection:str):
     try:
         return(eagle.delete_by_docid(
             doc_id=docid,
@@ -63,7 +63,7 @@ def delete(docid:str, collection:str):
         return(f"ERRR:{str(e)}")
 
 @app.get("/searchdoc")
-def searchdoc(docid:str,collection:str):
+def Search_for_documents_by_ID(docid:str,collection:str):
     try:
         return(eagle.search_by_docid(
             doc_id= docid,
@@ -74,7 +74,7 @@ def searchdoc(docid:str,collection:str):
         return(f"ERRR:{str(e)}")
 
 @app.get("/query")
-def query(query:str, imgcollection:str="", txtcollection:str="", client:str="", bot:str="", limit=10, prefetch = 100):
+def Query_for_extracts_by_text(query:str, imgcollection:str="", txtcollection:str="", client:str="", bot:str="", limit=10, prefetch = 100):
     try:
         return(eagle.search(
             query = query,
@@ -88,6 +88,22 @@ def query(query:str, imgcollection:str="", txtcollection:str="", client:str="", 
     except Exception as e:
         print(f"ERROR QUERYING ON {datetime.now().strftime('%Y_%m_%d')} WITH QUERY [{query}] AT COLLECTIONS {imgcollection},{txtcollection} : {e}")
         return(f"ERRR:{str(e)}")
+
+@app.get("/makecol")
+def create_or_find_collection(name:str, text:bool):
+    """Create a collection if it doesn't exist and return the details, or return the details of a collection if it does exist.
+
+    Args:
+        name (str): Name of the collection.
+        text (bool): Whether the collection is for text or for images.
+    
+    """
+    eagle._setup_collection(name,text)
+    return(eagle._find_collection(name))
+
+@app.get("/deletecol")
+def delete_collection(name:str):
+    return(eagle._delete_collection(name))
 
 @app.get("/allcolumns")
 def get_all_cols():
