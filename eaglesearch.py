@@ -85,7 +85,7 @@ class EagleSearch:
 
         self.e5model = sentence_transformers.SentenceTransformer('intfloat/e5-mistral-7b-instruct')
 
-        self.processor = ColQwen2Processor.from_pretrained("Metric-AI/colqwen2.5-3b-multilingual")
+        self.processor = ColQwen2Processor.from_pretrained("nomic-ai/colnomic-embed-multimodal-3b")
 
         # Initialize Qdrant client
         self.client = QdrantClient(
@@ -586,7 +586,7 @@ class EagleSearch:
                             "doc_id" : doc_id,
                             "page_id": f"{doc_id}_{page_num}",
                             "doc_name": pdf.filename.split("/")[-1],
-                            "page_number": page_num,
+                            "page_number": page_num+1,
                             "metadata": metadata,
                             "page_image" : base64.b64encode(buffered.getvalue()).decode(),
                             "text_content": text_data,
@@ -1040,7 +1040,6 @@ class EagleSearch:
             if fformat in txformats:
                 if txt_collection != "":
                     txchunks = self.chunk_document(i)
-                    print(txchunks)
                     retlist.update(self._ingest_text(
                         chunks =txchunks,
                         file = i,
@@ -1052,13 +1051,11 @@ class EagleSearch:
                 if img_collection != "":
                     
                     if fformat == "pdf":
-                        print("pdf check passed")
                         retlist.update(self._ingest_pdf(
                             pdf=i,
                             collection_name= img_collection,
                             batch_size=5))
                     else:
-                        print("png check passed")
                         retlist.update(self._ingest_photos(
                             images = i,
                             collection_name=img_collection
