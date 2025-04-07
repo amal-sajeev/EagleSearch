@@ -43,7 +43,7 @@ class EagleSearch:
                  IDEAL_CHUNK_SIZE = 1000,  # Ideal Characters in each chunk
                  MAX_CHUNK_SIZE = 1200,  # Maximum Characters in each chunk
                  similarity_threshold: float = 0.3, #Threshold for whether sentence should be added to chunk
-                 chunk_embedding_model: str = 'all-MiniLM-L6-v2', #Small Embedding model for semantic chunking.
+                 chunk_embedding_model: str = 'intfloat/multilingual-e5-large-instruct', #Small Embedding model for semantic chunking.
                  batch_size: int = 32,
                  max_cache_size: int = 10000
                  ):
@@ -83,9 +83,9 @@ class EagleSearch:
          # Initialize VLLM model
         self.colmodel = vllm_model
 
-        self.e5model = sentence_transformers.SentenceTransformer('intfloat/e5-mistral-7b-instruct')
+        self.e5model = sentence_transformers.SentenceTransformer('intfloat/multilingual-e5-large-instruct')
 
-        self.processor = ColQwen2Processor.from_pretrained("nomic-ai/colnomic-embed-multimodal-3b")
+        self.processor = ColQwen2Processor.from_pretrained("tsystems/colqwen2.5-3b-multilingual-v1.0")
 
         # Initialize Qdrant client
         self.client = QdrantClient(
@@ -383,7 +383,7 @@ class EagleSearch:
                     collection_name=collection_name,
                     vectors_config={
                         "txt_vectors": models.VectorParams(
-                            size=4096,
+                            size=1024,
                             distance=models.Distance.COSINE,
                             multivector_config=models.MultiVectorConfig(
                                 comparator=models.MultiVectorComparator.MAX_SIM
