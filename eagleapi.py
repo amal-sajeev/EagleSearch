@@ -106,7 +106,7 @@ def delete_collection(name:str):
     return(eagle._delete_collection(name))
 
 @app.get("/allcolumns")
-def get_all_cols():
+def get_all_collections():
     try:
         return(eagle.get_collections())
     except Exception as e:

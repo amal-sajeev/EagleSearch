@@ -83,9 +83,9 @@ class EagleSearch:
          # Initialize VLLM model
         self.colmodel = vllm_model
 
-        self.e5model = sentence_transformers.SentenceTransformer('intfloat/multilingual-e5-large')
+        self.e5model = sentence_transformers.SentenceTransformer('intfloat/e5-mistral-7b-instruct')
 
-        self.processor = ColQwen2Processor.from_pretrained("vidore/colqwen2-v1.0")
+        self.processor = ColQwen2Processor.from_pretrained("Metric-AI/colqwen2.5-3b-multilingual")
 
         # Initialize Qdrant client
         self.client = QdrantClient(
@@ -383,7 +383,7 @@ class EagleSearch:
                     collection_name=collection_name,
                     vectors_config={
                         "txt_vectors": models.VectorParams(
-                            size=1024,
+                            size=4096,
                             distance=models.Distance.COSINE,
                             multivector_config=models.MultiVectorConfig(
                                 comparator=models.MultiVectorComparator.MAX_SIM
@@ -1250,5 +1250,5 @@ def save_image(base64_string, output_path):
         base64_string (str): The base64 encoded image string
         output_path (str): Path where the image should be saved
         """
-        img = self.base64_to_image(base64_string)
+        img = base64_to_image(base64_string)
         img.save(output_path)
