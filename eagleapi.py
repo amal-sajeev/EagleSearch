@@ -14,7 +14,7 @@ eagle = EagleSearch(
     vllm_model= ColQwen2.from_pretrained(
             "vidore/colqwen2-v1.0",
             torch_dtype=torch.bfloat16,
-            device_map="cuda" if torch.cuda.is_available() else "cpu"
+            device_map="cuda" #if torch.cuda.is_available() else "cpu"
         ).eval(),
     qdrant_api_key= os.environ["qdrantkey"],
     qdrant_url = os.environ['qdranturl'],
@@ -32,24 +32,24 @@ app = FastAPI()
 @app.post("/ingest")
 def Embed_and_ingest_files(files: Union[list[UploadFile],UploadFile], client:str, bot:str, txt_collection:str, img_collection:str):
 
-    # return(eagle.ingest(
-    #         client_id= client,
-    #         bot_id = bot,
-    #         files = files,
-    #         txt_collection = txt_collection,
-    #         img_collection= img_collection
-    #     ))
-    try:
-        return(eagle.ingest(
+    return(eagle.ingest(
             client_id= client,
             bot_id = bot,
             files = files,
             txt_collection = txt_collection,
             img_collection= img_collection
         ))
-    except Exception as e:
-        print(f"ERROR UPLOADING FILE ON {datetime.now().strftime('%Y_%m_%d')} : {e}")
-        return(f"ERROR: {str(e)}")
+    # try:
+    #     return(eagle.ingest(
+    #         client_id= client,
+    #         bot_id = bot,
+    #         files = files,
+    #         txt_collection = txt_collection,
+    #         img_collection= img_collection
+    #     ))
+    # except Exception as e:
+    #     print(f"ERROR UPLOADING FILE ON {datetime.now().strftime('%Y_%m_%d')} : {e}")
+    #     return(f"ERROR: {str(e)}")
 
 @app.post("/delete")
 def Delete_documents_by_ID(docid:str, collection:str):

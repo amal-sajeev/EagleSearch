@@ -510,19 +510,23 @@ class EagleSearch:
     def _process_page(self, image):
         """Generate vectors for a single page"""
         processed_image = self.processor.process_images([image])
+        # Ensure processed_image is on the same device as the model
+        processed_image = {k: v.to(self.device) if hasattr(v, 'to') else v for k, v in processed_image.items()}
+        
         image_embeddings = self.colmodel(**processed_image)
 
         # Get first embedding (batch size 1)
         image_embedding = image_embeddings[0]
 
         # Identify image tokens
-        mask = processed_image.input_ids[0] == self.processor.image_token_id
+        print(processed_image)
+        mask = processed_image['input_ids'][0] == self.processor.image_token_id
 
         # Get patches dimensions
         x_patches, y_patches = self.processor.get_n_patches(
             image.size,
             patch_size=self.colmodel.patch_size,
-            spatial_merge_size= self.colmodel.spatial_merge_size
+            spatial_merge_size=self.colmodel.spatial_merge_size
         )
 
         # Reshape and mean pool
@@ -569,39 +573,65 @@ class EagleSearch:
             for page_num in range(batch_start, batch_end):
                 page = doc[page_num]
 
-                try:
-                    # Extract and clean text
-                    text_data = self._extract_page_text(page)
-                    # Convert to image and process
-                    image = self._convert_page_to_image(page)
-                    vectors = self._process_page(image)
-                    buffered = BytesIO()
-                    image.save(buffered,format="PNG")
-                    # Create point structure for this page
+                # try:
+                #     # Extract and clean text
+                #     text_data = self._extract_page_text(page)
+                #     # Convert to image and process
+                #     image = self._convert_page_to_image(page)
+                #     vectors = self._process_page(image)
+                #     buffered = BytesIO()
+                #     image.save(buffered,format="PNG")
+                #     # Create point structure for this page
                     
-                    point = models.PointStruct(
-                        id= str(uuid.uuid4()),
-                        vector=vectors,
-                        payload={
-                            "doc_id" : doc_id,
-                            "page_id": f"{doc_id}_{page_num}",
-                            "doc_name": pdf.filename.split("/")[-1],
-                            "page_number": page_num+1,
-                            "metadata": metadata,
-                            "page_image" : base64.b64encode(buffered.getvalue()).decode(),
-                            "text_content": text_data,
-                            "page_dimensions": {
-                                "width": float(page.rect.width),
-                                "height": float(page.rect.height)
-                            }
+                #     point = models.PointStruct(
+                #         id= str(uuid.uuid4()),
+                #         vector=vectors,
+                #         payload={
+                #             "doc_id" : doc_id,
+                #             "page_id": f"{doc_id}_{page_num}",
+                #             "doc_name": pdf.filename.split("/")[-1],
+                #             "page_number": page_num+1,
+                #             "metadata": metadata,
+                #             "page_image" : base64.b64encode(buffered.getvalue()).decode(),
+                #             "text_content": text_data,
+                #             "page_dimensions": {
+                #                 "width": float(page.rect.width),
+                #                 "height": float(page.rect.height)
+                #             }
+                #         }
+                #     )
+                #     batch_points.append(point)
+
+                # except Exception as e:
+                #     print(f"Error processing page {page_num}: {str(e)}")
+                #     continue
+                # Extract and clean text
+                text_data = self._extract_page_text(page)
+                # Convert to image and process
+                image = self._convert_page_to_image(page)
+                vectors = self._process_page(image)
+                buffered = BytesIO()
+                image.save(buffered,format="PNG")
+                # Create point structure for this page
+                
+                point = models.PointStruct(
+                    id= str(uuid.uuid4()),
+                    vector=vectors,
+                    payload={
+                        "doc_id" : doc_id,
+                        "page_id": f"{doc_id}_{page_num}",
+                        "doc_name": pdf.filename.split("/")[-1],
+                        "page_number": page_num+1,
+                        "metadata": metadata,
+                        "page_image" : base64.b64encode(buffered.getvalue()).decode(),
+                        "text_content": text_data,
+                        "page_dimensions": {
+                            "width": float(page.rect.width),
+                            "height": float(page.rect.height)
                         }
-                    )
-                    batch_points.append(point)
-
-                except Exception as e:
-                    print(f"Error processing page {page_num}: {str(e)}")
-                    continue
-
+                    }
+                )
+                batch_points.append(point)
             # Batch upload to Qdrant
             if batch_points:
                 try:
