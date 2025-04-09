@@ -30,26 +30,28 @@ eagle = EagleSearch(
 app = FastAPI()
 
 @app.post("/ingest")
-def Embed_and_ingest_files(files: Union[list[UploadFile],UploadFile], client:str, bot:str, txt_collection:str, img_collection:str):
+def Embed_and_ingest_files(files: Union[list[UploadFile],UploadFile], client:str, bot:str, txt_collection:str, img_collection:str, makeifnot:bool=True):
 
-    return(eagle.ingest(
-            client_id= client,
-            bot_id = bot,
-            files = files,
-            txt_collection = txt_collection,
-            img_collection= img_collection
-        ))
-    # try:
-    #     return(eagle.ingest(
+    # return(eagle.ingest(
     #         client_id= client,
     #         bot_id = bot,
     #         files = files,
     #         txt_collection = txt_collection,
-    #         img_collection= img_collection
+    #         img_collection= img_collection ,
+    #         makeifnot= makeifnot
     #     ))
-    # except Exception as e:
-    #     print(f"ERROR UPLOADING FILE ON {datetime.now().strftime('%Y_%m_%d')} : {e}")
-    #     return(f"ERROR: {str(e)}")
+    try:
+        return(eagle.ingest(
+            client_id= client,
+            bot_id = bot,
+            files = files,
+            txt_collection = txt_collection,
+            img_collection= img_collection,
+            makeifnot= makeifnot
+        ))
+    except Exception as e:
+        print(f"ERROR UPLOADING FILE ON {datetime.now().strftime('%Y_%m_%d')} : {e}")
+        return(f"ERROR: {str(e)}")
 
 @app.post("/delete")
 def Delete_documents_by_ID(docid:str, collection:str):
@@ -95,7 +97,7 @@ def create_or_find_collection(name:str, text:bool):
 
     Args:
         name (str): Name of the collection.
-        text (bool): Whether the collection is for text or for images.
+        text (bool): Whether the collection is for text or for images. If True, the collection is a text collection.
     
     """
     eagle._setup_collection(name,text)

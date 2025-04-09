@@ -373,12 +373,12 @@ class EagleSearch:
 
         return processed_sentences
 
-    def _setup_collection(self, collection_name, txt:bool=False):
+    def _setup_collection(self, collection_name, txt:bool=False, makeifnot:bool = True):
         """Create Qdrant collection if it doesn't exist"""
         try:
             self.client.get_collection(collection_name)
         except:
-            if txt == True:
+            if txt == True and makeifnot:
                 return(self.client.create_collection(
                     collection_name=collection_name,
                     vectors_config={
@@ -392,7 +392,7 @@ class EagleSearch:
                         )
                     }
                 ))
-            else:
+            elif txt == False and makeifnot:
                 return(self.client.create_collection(
                     collection_name=collection_name,
                     vectors_config={
@@ -420,6 +420,8 @@ class EagleSearch:
                         )
                     }
                 ))
+            else:
+                raise ValueError("Collection doesn't exist!")
 
     def _find_collection(self, collection_name):
         return(self.client.get_collection(collection_name))
@@ -519,7 +521,6 @@ class EagleSearch:
         image_embedding = image_embeddings[0]
 
         # Identify image tokens
-        print(processed_image)
         mask = processed_image['input_ids'][0] == self.processor.image_token_id
 
         # Get patches dimensions
@@ -1042,7 +1043,7 @@ class EagleSearch:
         return({file.filename:{"id": doc_id, "collection": collection_name}})
             
     #   Main Ingestion function
-    def ingest(self, client_id, bot_id, files: Union[UploadFile,List[UploadFile]], txt_collection:str = "", img_collection:str = ""):
+    def ingest(self, client_id, bot_id, files: Union[UploadFile,List[UploadFile]], txt_collection:str = "", img_collection:str = "", makeifnot: bool=True):
         """Chunk content of files, embed them into vectors, and upload them to vector store.
     
         Args:
@@ -1060,9 +1061,9 @@ class EagleSearch:
             flist.extend(files)
 
         if txt_collection !="":
-            self._setup_collection(txt_collection,txt=True)
+            self._setup_collection(txt_collection, True, makeifnot)
         if img_collection !="":
-            self._setup_collection(img_collection)
+            self._setup_collection(img_collection, False, makeifnot)
 
         for i in flist:
             
