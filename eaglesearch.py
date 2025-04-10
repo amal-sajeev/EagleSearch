@@ -574,38 +574,6 @@ class EagleSearch:
             for page_num in range(batch_start, batch_end):
                 page = doc[page_num]
 
-                # try:
-                #     # Extract and clean text
-                #     text_data = self._extract_page_text(page)
-                #     # Convert to image and process
-                #     image = self._convert_page_to_image(page)
-                #     vectors = self._process_page(image)
-                #     buffered = BytesIO()
-                #     image.save(buffered,format="PNG")
-                #     # Create point structure for this page
-                    
-                #     point = models.PointStruct(
-                #         id= str(uuid.uuid4()),
-                #         vector=vectors,
-                #         payload={
-                #             "doc_id" : doc_id,
-                #             "page_id": f"{doc_id}_{page_num}",
-                #             "doc_name": pdf.filename.split("/")[-1],
-                #             "page_number": page_num+1,
-                #             "metadata": metadata,
-                #             "page_image" : base64.b64encode(buffered.getvalue()).decode(),
-                #             "text_content": text_data,
-                #             "page_dimensions": {
-                #                 "width": float(page.rect.width),
-                #                 "height": float(page.rect.height)
-                #             }
-                #         }
-                #     )
-                #     batch_points.append(point)
-
-                # except Exception as e:
-                #     print(f"Error processing page {page_num}: {str(e)}")
-                #     continue
                 # Extract and clean text
                 text_data = self._extract_page_text(page)
                 # Convert to image and process
@@ -1064,35 +1032,39 @@ class EagleSearch:
             self._setup_collection(txt_collection, True, makeifnot)
         if img_collection !="":
             self._setup_collection(img_collection, False, makeifnot)
-
+        curcollection=""
         for i in flist:
             
             fformat = i.filename.split(".")[-1]
-            if fformat in txformats:
-                if txt_collection != "":
-                    txchunks = self.chunk_document(i)
-                    retlist.update(self._ingest_text(
-                        chunks =txchunks,
-                        file = i,
-                        collection_name= txt_collection,
-                        client_id= client_id,
-                        bot_id = bot_id,
-                    batch_size=5))
-            elif fformat in imgformats:
-                if img_collection != "":
-                    
-                    if fformat == "pdf":
-                        retlist.update(self._ingest_pdf(
-                            pdf=i,
-                            collection_name= img_collection,
-                            batch_size=5))
-                    else:
-                        retlist.update(self._ingest_photos(
-                            images = i,
-                            collection_name=img_collection
-                            ))
-            else:
-                raise ValueError(f"Unsupported file type: {fformat}")
+            try:
+                if fformat in txformats:
+                    if txt_collection != "":
+                        curcollection=txt_collection
+                        txchunks = self.chunk_document(i)
+                        retlist.update(self._ingest_text(
+                            chunks =txchunks,
+                            file = i,
+                            collection_name= txt_collection,
+                            client_id= client_id,
+                            bot_id = bot_id,
+                        batch_size=5))
+                elif fformat in imgformats:
+                    if img_collection != "":
+                        curcollection=img_collection
+                        if fformat == "pdf":
+                            retlist.update(self._ingest_pdf(
+                                pdf=i,
+                                collection_name= img_collection,
+                                batch_size=5))
+                        else:
+                            retlist.update(self._ingest_photos(
+                                images = i,
+                                collection_name=img_collection
+                                ))
+                else:
+                    retlist.update({i.filename:{"ERROR" : f"Unsupported file type: {fformat}"}})
+            except:
+                retlist.update({i.filename : {"ERROR": "Error occured while ingesting file!", "collection": curcollection }})
         return(retlist)
 
     def search(self, query, limit=10, prefetch_limit=100, client_id="", bot_id="", txt_collection:str="", img_collection:str=""):
