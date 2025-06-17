@@ -1,23 +1,25 @@
 from eaglesearch import EagleSearch
+import eaglesearch
 import pprint
 from io import BytesIO
 from fastapi import UploadFile
 import os
 from colpali_engine.models import ColQwen2, ColQwen2Processor
 from tqdm import tqdm
+from PIL import Image
 
-txtchunker = EagleSearch(
-    vllm_model= "",
-    qdrant_api_key= os.environ["qdrantkey"],
-    qdrant_url = os.environ['qdranturl'],
-    MIN_CHUNK_SIZE = 600,  # Minimum Characters in each chunk
-    IDEAL_CHUNK_SIZE = 1000,  # Ideal Characters in each chunk
-    MAX_CHUNK_SIZE = 1200,  # Maximum Characters in each chunk
-    similarity_threshold= 0.3, #Threshold for whether sentence should be added to chunk
-    chunk_embedding_model = 'all-MiniLM-L6-v2', #Small Embedding model for semantic chunking.
-    batch_size = 32,
-    max_cache_size = 10000
-)
+# txtchunker = EagleSearch(
+#     vllm_model= "",
+#     qdrant_api_key= os.environ["qdrantkey"],
+#     qdrant_url = os.environ['qdranturl'],
+#     MIN_CHUNK_SIZE = 600,  # Minimum Characters in each chunk
+#     IDEAL_CHUNK_SIZE = 1000,  # Ideal Characters in each chunk
+#     MAX_CHUNK_SIZE = 1200,  # Maximum Characters in each chunk
+#     similarity_threshold= 0.3, #Threshold for whether sentence should be added to chunk
+#     chunk_embedding_model = 'all-MiniLM-L6-v2', #Small Embedding model for semantic chunking.
+#     batch_size = 32,
+#     max_cache_size = 10000
+# )
 
 #JSON TEST
 upfile = []
@@ -78,16 +80,16 @@ upfile = []
 
 #PDF TEST
 
-with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/samples/sample.pdf", "rb") as file:
+# with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/samples/sample.pdf", "rb") as file:
 
-    # print(BytesIO(file.read()).read())
+#     # print(BytesIO(file.read()).read())
 
-    upfilo = UploadFile(
-        file = BytesIO(file.read()),
-        filename = file.name.split("/")[-1],
-        size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/samples/sample.pdf")
-    )
-    upfile.append(upfilo)
+#     upfilo = UploadFile(
+#         file = BytesIO(file.read()),
+#         filename = file.name.split("/")[-1],
+#         size = os.path.getsize(f"C:/Users/User 3/Documents/Python scratchpad/eaglesearch/samples/sample.pdf")
+#     )
+#     upfile.append(upfilo)
 
 
 # images=[]
@@ -103,7 +105,7 @@ with open("C:/Users/User 3/Documents/Python scratchpad/eaglesearch/samples/sampl
 # # txtchunker._ingest_photos(images, "imgtest")
 # print(upfile)
 
-pprint.pprint(txtchunker.ingest("anthony", "amarna",upfilo,"txttest","shodan"))
+# pprint.pprint(txtchunker.ingest("anthony", "amarna",upfilo,"txttest","shodan"))
 
 # print(txtchunker.search(query = 'cat',img_collection="imgtest",limit=1)[0]["doc_name"])
  
@@ -115,3 +117,5 @@ pprint.pprint(txtchunker.ingest("anthony", "amarna",upfilo,"txttest","shodan"))
 #     pprint.pprint(i.id)
 
 # print(txtchunker.delete_by_docid(" a678a6d3-a458-49b6-9a31-b5a80a4924c9","babel"))
+
+
