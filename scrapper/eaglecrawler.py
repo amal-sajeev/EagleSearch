@@ -396,7 +396,7 @@ class ContentAnalyzer:
 
 class EnhancedCrawler:
     """
-    Enhanced website crawler with visual/text modes and A4-sized page splitting
+    Enhanced website crawler with visual/text modes and page splitting
     
     Attributes:
         mode: 'visual', 'text', or 'both'
@@ -867,7 +867,20 @@ class EnhancedCrawler:
             }
     
     def _clean_text(self, text: str) -> str:
-        """Clean and format extracted text"""
+        """Clean and format extracted text
+        
+        Args:
+            text: Raw extracted text
+            
+        Returns:
+            Cleaned text with:
+            - Normalized whitespace
+            - Removed control characters
+            - Reduced special character repetition
+            
+        Notes:
+            - Preserves paragraph structure
+            - Removes encoding artifacts"""
         # Remove excessive whitespace
         text = re.sub(r'\s+', ' ', text)
         
@@ -883,7 +896,19 @@ class EnhancedCrawler:
         return text.strip()
 
     async def _process_page(self, page: Page, url: str) -> CrawlResult:
-        """Process a single page based on the crawling mode"""
+        """Process a single page based on crawling mode
+        
+        Args:
+            page: Playwright Page instance
+            url: URL to process
+            
+        Returns:
+            CrawlResult object with capture/extraction results
+            
+        Notes:
+            - Handles retries for failed pages
+            - Combines visual/text extraction results
+            - Records page dimensions and metadata"""
         
         for attempt in range(self.retry_attempts + 1):
             try:
@@ -928,7 +953,18 @@ class EnhancedCrawler:
         )
 
     async def crawl(self, urls: List[str]) -> List[CrawlResult]:
-        """Crawl the given list of URLs"""
+        """Crawl the given list of URLs
+        
+        Args:
+            urls: List of URLs to crawl
+            
+        Returns:
+            List of CrawlResult objects
+            
+        Notes:
+            - Respects max_pages limit
+            - Skips duplicate URLs
+            - Manages browser lifecycle"""
         browser, context = await self._setup_browser()
         results = []
 
