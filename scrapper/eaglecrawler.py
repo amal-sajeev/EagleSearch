@@ -80,11 +80,11 @@ class A4Dimensions:
     HEIGHT_96DPI = 1123
     WIDTH_150DPI = 1240
     HEIGHT_150DPI = 1754
-    WIDTH_DESKTOP = 1920
-    HEIGHT_DESKTOP = 1080
+    WIDTH_DESKTOP = 1523
+    HEIGHT_DESKTOP = 2707
     
     @classmethod
-    def get_dimensions(cls, dpi: int = 96) -> Tuple[int, int]:
+    def get_dimensions(cls, width: int = 1920) -> Tuple[int, int]:
         """Get A4 dimensions for specified DPI
         
         Args:
@@ -97,12 +97,10 @@ class A4Dimensions:
             - Uses 96 DPI as default
             - For DPI > 150, returns desktop dimensions
         """
-        if dpi <= 96:
-            return cls.WIDTH_96DPI, cls.HEIGHT_96DPI
-        elif dpi>96 and dpi<=150:
-            return cls.WIDTH_150DPI, cls.HEIGHT_150DPI
+        if width > 0:
+            return width, round(width*1.4143576826196473551637279596977)
         else:
-            return cls.HEIGHT_DESKTOP, cls.WIDTH_DESKTOP
+            raise Exception("Page width should be higher than 0!")
 
 
 class ContentAnalyzer:
@@ -401,7 +399,7 @@ class EnhancedCrawler:
     Attributes:
         mode: 'visual', 'text', or 'both'
         output_dir: Output directory path
-        a4_dpi: DPI for A4 sizing (72, 96, 150)
+        page_width: DPI for A4 sizing (72, 96, 150)
         min_overlap: Minimum page overlap in pixels
         smart_splitting: Enable content-aware splitting
         preserve_context: Prevent cutting important elements
@@ -423,7 +421,7 @@ class EnhancedCrawler:
         mode: str = "visual",  # "visual", "text", or "both"
         output_dir: str = "crawler_output",
         # A4 visual settings
-        a4_dpi: int = 96,  # DPI for A4 sizing (72, 96, or 150)
+        page_width: int = 1920,  # DPI for A4 sizing (72, 96, or 150)
         min_overlap: int = 50,  # Minimum overlap between pages
         smart_splitting: bool = True,
         preserve_context: bool = True,
@@ -447,7 +445,7 @@ class EnhancedCrawler:
         Args:
             mode: Crawling mode - "visual", "text", or "both"
             output_dir: Directory to save outputs
-            a4_dpi: DPI setting for A4 page dimensions (72, 96, or 150)
+            page_width: DPI setting for A4 page dimensions (72, 96, or 150)
             min_overlap: Minimum overlap between page chunks in pixels
             smart_splitting: Use intelligent content-aware splitting
             preserve_context: Ensure important elements aren't cut off
@@ -470,8 +468,8 @@ class EnhancedCrawler:
         self.output_dir = Path(output_dir)
         
         # A4 dimensions
-        self.a4_width, self.a4_height = A4Dimensions.get_dimensions(a4_dpi)
-        self.a4_dpi = a4_dpi
+        self.a4_width, self.a4_height = A4Dimensions.get_dimensions(page_width)
+        self.page_width = page_width
         self.min_overlap = min_overlap
         self.smart_splitting = smart_splitting
         self.preserve_context = preserve_context
@@ -508,7 +506,7 @@ class EnhancedCrawler:
         self.visited_urls = set()
         self.crawl_results = []
         
-        print(f"Initialized crawler with A4 dimensions: {self.a4_width}x{self.a4_height}px at {a4_dpi}DPI")
+        print(f"Initialized crawler with A4 dimensions: {self.a4_width}x{self.a4_height}px at {page_width}DPI")
     
     async def _setup_browser(self):
         """Setup and configure the browser with A4 viewport
@@ -994,20 +992,21 @@ class EnhancedCrawler:
 async def main():
     # Sample URLs for testing (replace or expand as needed)
     test_urls = [
-        "https://www.reva.edu.in"
+        "https://en.wikipedia.org/wiki/Floating_point_operations_per_second"
     ]
 
     # Initialize crawler (visual + text mode)
     crawler = EnhancedCrawler(
-        mode="both",
+        mode="text",
         output_dir="crawler_output_test",
-        a4_dpi=151,
+        page_width=1920,
         smart_splitting=True,
         preserve_context=True,
         headless=True,
         max_pages=2,
         wait_time=3000,
-        save_html=True
+        save_html=True,
+        clean_text= True
     )
 
     results = await crawler.crawl(test_urls)
