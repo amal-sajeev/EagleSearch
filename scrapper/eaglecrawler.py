@@ -414,15 +414,20 @@ class EnhancedCrawler:
         clean_text: Clean extracted text content
         save_html: Save raw HTML content
         content_selectors: CSS selectors for content extraction
+        max_depth: Maximum depth to crawl (1 = no recursion, 2 = one level deep, etc.)
+        same_domain_only: Only crawl URLs from the same domain as starting URLs
+        url_patterns: List of regex patterns that URLs must match to be crawled
+        exclude_patterns: List of regex patterns to exclude from crawling
+        delay_between_requests: Delay in seconds between requests to be respectful
     """
     
     def __init__(
         self,
-        mode: str = "visual",  # "visual", "text", or "both"
+        mode: str = "visual",
         output_dir: str = "crawler_output",
         # A4 visual settings
-        page_width: int = 1920,  # DPI for A4 sizing (72, 96, or 150)
-        min_overlap: int = 50,  # Minimum overlap between pages
+        page_width: int = 1920,
+        min_overlap: int = 50,
         smart_splitting: bool = True,
         preserve_context: bool = True,
         # General settings
@@ -437,7 +442,13 @@ class EnhancedCrawler:
         extract_images: bool = True,
         clean_text: bool = True,
         save_html: bool = False,
-        content_selectors: List[str] = None
+        content_selectors: List[str] = None,
+        # NEW: Recursive crawling settings
+        max_depth: int = 1,
+        same_domain_only: bool = True,
+        url_patterns: List[str] = None,
+        exclude_patterns: List[str] = None,
+        delay_between_requests: float = 1.0
     ):
         """
         Initialize the enhanced crawler
@@ -502,12 +513,136 @@ class EnhancedCrawler:
             if self.save_html:
                 (self.output_dir / "html").mkdir(exist_ok=True)
         
-        # Track visited URLs and results
+        self.max_depth = max_depth
+        self.same_domain_only = same_domain_only
+        self.url_patterns = [re.compile(pattern) for pattern in (url_patterns or [])]
+        self.exclude_patterns = [re.compile(pattern) for pattern in (exclude_patterns or [])]
+        self.delay_between_requests = delay_between_requests
+        
+        # NEW: Track crawling state
         self.visited_urls = set()
+        self.crawl_queue = []  # List of (url, depth) tuples
+        self.allowed_domains = set()  # Domains we're allowed to crawl
         self.crawl_results = []
+        self.url_to_depth = {}  # Track depth of each URL
+        
         
         print(f"Initialized crawler with A4 dimensions: {self.a4_width}x{self.a4_height}px at {page_width}DPI")
     
+    def _is_valid_url(self, url: str, base_url: str, current_depth: int) -> bool:
+        """
+        Check if a URL should be crawled based on filtering rules
+        
+        Args:
+            url: URL to validate
+            base_url: Base URL for resolving relative links
+            current_depth: Current crawling depth
+            
+        Returns:
+            True if URL should be crawled, False otherwise
+        """
+        try:
+            # Resolve relative URLs
+            absolute_url = urljoin(base_url, url)
+            parsed_url = urlparse(absolute_url)
+            
+            # Skip non-HTTP(S) URLs
+            if parsed_url.scheme not in ['http', 'https']:
+                return False
+            
+            # Skip if already visited
+            if absolute_url in self.visited_urls:
+                return False
+            
+            # Check depth limit
+            if current_depth >= self.max_depth:
+                return False
+            
+            # Check domain restrictions
+            if self.same_domain_only and parsed_url.netloc not in self.allowed_domains:
+                return False
+            
+            # Check URL patterns (must match at least one if patterns are specified)
+            if self.url_patterns:
+                if not any(pattern.search(absolute_url) for pattern in self.url_patterns):
+                    return False
+            
+            # Check exclude patterns (must not match any)
+            if self.exclude_patterns:
+                if any(pattern.search(absolute_url) for pattern in self.exclude_patterns):
+                    return False
+            
+            # Skip common non-content URLs
+            skip_extensions = {'.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', 
+                             '.zip', '.rar', '.tar', '.gz', '.jpg', '.jpeg', '.png', '.gif', 
+                             '.svg', '.ico', '.css', '.js', '.xml', '.json'}
+            
+            path_lower = parsed_url.path.lower()
+            if any(path_lower.endswith(ext) for ext in skip_extensions):
+                return False
+            
+            # Skip fragments and JavaScript URLs
+            if parsed_url.fragment or absolute_url.startswith('javascript:'):
+                return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"  Error validating URL {url}: {e}")
+            return False
+
+    def _extract_links_from_result(self, result: CrawlResult, current_depth: int) -> List[str]:
+        """
+        Extract and filter links from a crawl result for further crawling
+        
+        Args:
+            result: CrawlResult containing extracted links
+            current_depth: Current depth in crawl tree
+            
+        Returns:
+            List of valid URLs to crawl next
+        """
+        valid_links = []
+        
+        if not result.links or current_depth >= self.max_depth:
+            return valid_links
+        
+        for link in result.links:
+            if self._is_valid_url(link, result.url, current_depth + 1):
+                absolute_url = urljoin(result.url, link)
+                valid_links.append(absolute_url)
+        
+        return valid_links
+
+    def _initialize_crawl_queue(self, start_urls: List[str]) -> None:
+        """
+        Initialize the crawl queue with starting URLs
+        
+        Args:
+            start_urls: List of starting URLs
+        """
+        self.crawl_queue = []
+        self.visited_urls = set()
+        self.allowed_domains = set()
+        self.url_to_depth = {}
+        
+        # Extract allowed domains from start URLs
+        for url in start_urls:
+            try:
+                parsed = urlparse(url)
+                if parsed.netloc:
+                    self.allowed_domains.add(parsed.netloc)
+                
+                # Add to queue with depth 0
+                self.crawl_queue.append((url, 0))
+                self.url_to_depth[url] = 0
+                
+            except Exception as e:
+                print(f"Error parsing start URL {url}: {e}")
+        
+        print(f"Initialized crawl queue with {len(self.crawl_queue)} URLs")
+        print(f"Allowed domains: {self.allowed_domains}")
+
     async def _setup_browser(self):
         """Setup and configure the browser with A4 viewport
         
@@ -975,9 +1110,18 @@ class EnhancedCrawler:
                             return {{
                                 url: link.href,
                                 text: link.textContent.trim(),
-                                title: link.title || ''
+                                title: link.title || '',
+                                href_attribute: link.getAttribute('href') // Keep original href for filtering
                             }};
-                        }}).filter(link => link.url.startsWith('http'));
+                        }}).filter(link => {{
+                            // Exclude anchor links (starting with #)
+                            const originalHref = link.href_attribute;
+                            return link.url.startsWith('http') && 
+                                !originalHref.startsWith('#') &&
+                                !originalHref.startsWith('javascript:') &&
+                                !originalHref.startsWith('mailto:') &&
+                                !originalHref.startsWith('tel:');
+                        }});
                     }}
                     
                     // Extract images
@@ -1172,19 +1316,107 @@ class EnhancedCrawler:
             error=last_error
         )
 
-    async def crawl(self, urls: List[str]) -> List[CrawlResult]:
-        """Crawl the given list of URLs
+    async def crawl_recursive(self, start_urls: List[str]) -> List[CrawlResult]:
+        """
+        Recursively crawl websites starting from the given URLs
+        
+        Args:
+            start_urls: List of starting URLs
+            
+        Returns:
+            List of CrawlResult objects from all crawled pages
+        """
+        browser, context = await self._setup_browser()
+        results = []
+        
+        try:
+            # Initialize crawling state
+            self._initialize_crawl_queue(start_urls)
+            pages_crawled = 0
+            
+            while self.crawl_queue and pages_crawled < self.max_pages:
+                # Get next URL from queue
+                current_url, current_depth = self.crawl_queue.pop(0)
+                
+                # Skip if already visited (shouldn't happen, but safety check)
+                if current_url in self.visited_urls:
+                    continue
+                
+                # Mark as visited
+                self.visited_urls.add(current_url)
+                pages_crawled += 1
+                
+                print(f"\n[Depth {current_depth}] Crawling {current_url} ({pages_crawled}/{self.max_pages})")
+                
+                # Create new page and process
+                page = await context.new_page()
+                try:
+                    result = await self._process_page(page, current_url)
+                    result.metadata = result.metadata or {}
+                    result.metadata['crawl_depth'] = current_depth
+                    
+                    self.crawl_results.append(result)
+                    results.append(result)
+                    
+                    # Extract links for further crawling (only if we haven't reached max depth)
+                    if current_depth < self.max_depth - 1:  # -1 because we want to crawl AT max_depth, not beyond
+                        new_links = self._extract_links_from_result(result, current_depth)
+                        
+                        # Add new links to queue
+                        for link in new_links:
+                            if link not in self.visited_urls and link not in [url for url, _ in self.crawl_queue]:
+                                self.crawl_queue.append((link, current_depth + 1))
+                                self.url_to_depth[link] = current_depth + 1
+                        
+                        print(f"  Added {len(new_links)} new URLs to crawl queue (total queue: {len(self.crawl_queue)})")
+                    
+                    # Respectful delay between requests
+                    if self.delay_between_requests > 0:
+                        await asyncio.sleep(self.delay_between_requests)
+                        
+                except Exception as e:
+                    print(f"  Error processing {current_url}: {e}")
+                    # Add error result
+                    error_result = CrawlResult(
+                        url=current_url,
+                        timestamp=time.time(),
+                        mode=self.mode,
+                        error=str(e),
+                        metadata={'crawl_depth': current_depth}
+                    )
+                    results.append(error_result)
+                    
+                finally:
+                    await page.close()
+            
+            print(f"\nRecursive crawl completed:")
+            print(f"  Total pages crawled: {pages_crawled}")
+            print(f"  Total URLs visited: {len(self.visited_urls)}")
+            print(f"  Remaining queue: {len(self.crawl_queue)}")
+            
+            # Print depth statistics
+            depth_stats = {}
+            for result in results:
+                depth = result.metadata.get('crawl_depth', 0) if result.metadata else 0
+                depth_stats[depth] = depth_stats.get(depth, 0) + 1
+            
+            print(f"  Pages by depth: {depth_stats}")
+            
+        finally:
+            await self._cleanup_browser(browser)
+        
+        return results
+
+    async def _crawl_single_level(self, urls: List[str]) -> List[CrawlResult]:
+        """
+        Original single-level crawling method (renamed from crawl)
         
         Args:
             urls: List of URLs to crawl
             
         Returns:
             List of CrawlResult objects
-            
-        Notes:
-            - Respects max_pages limit
-            - Skips duplicate URLs
-            - Manages browser lifecycle"""
+        """
         browser, context = await self._setup_browser()
         results = []
 
@@ -1199,6 +1431,8 @@ class EnhancedCrawler:
                 page = await context.new_page()
                 try:
                     result = await self._process_page(page, url)
+                    result.metadata = result.metadata or {}
+                    result.metadata['crawl_depth'] = 0
                     self.crawl_results.append(result)
                     results.append(result)
                 except Exception as e:
@@ -1211,42 +1445,81 @@ class EnhancedCrawler:
 
         return results
 
+    async def crawl(self, urls: List[str]) -> List[CrawlResult]:
+        """
+        Main crawl method - now supports both single-level and recursive crawling
+        
+        Args:
+            urls: List of URLs to crawl
+            
+        Returns:
+            List of CrawlResult objects
+        """
+        if self.max_depth <= 1:
+            # Use original single-level crawling
+            return await self._crawl_single_level(urls)
+        else:
+            # Use new recursive crawling
+            return await self.crawl_recursive(urls)
+
+# Updated main function to demonstrate recursive crawling
 async def main():
-    # Sample URLs for testing (replace or expand as needed)
+    # Sample URLs for testing recursive crawling
     test_urls = [
-        "https://en.wikipedia.org/wiki/Floating_point_operations_per_second"
+        "https://www.reva.edu.in/vice-chancellor"
     ]
 
-    # Initialize crawler (visual + text mode)
+    # Initialize crawler with recursive settings
     crawler = EnhancedCrawler(
         mode="text",
-        output_dir="crawler_output_test",
+        output_dir="crawler_output_recursive",
         page_width=1920,
         smart_splitting=True,
         preserve_context=True,
         headless=True,
-        max_pages=2,
-        wait_time=3000,
-        save_html=True,
-        clean_text= True
+        max_pages=1,  # Limit total pages
+        wait_time=2000,
+        save_html=False,
+        clean_text=True,
+        # Recursive crawling settings
+        max_depth=3,  # Crawl 3 levels deep
+        same_domain_only=True,
+        url_patterns=[
+            r'.*reva\.edu\.in/.*',  # Only Reva articles
+        ],
+        exclude_patterns=[
+            r'.*\.(jpg|jpeg|png|gif|pdf|doc)$',  # Skip media files
+            r'.*[Cc]ategory:.*',  # Skip Wikipedia categories
+            r'.*[Tt]alk:.*',  # Skip talk pages
+            r'.*[Uu]ser:.*',  # Skip user pages
+        ],
+        delay_between_requests=1.0  # Be respectful with 1 second delays
     )
 
-    results = await crawler.crawl(test_urls)
+    # Run recursive crawl
+    results = await crawler.crawl_recursive(test_urls)
 
     # Print results summary
+    print("\n" + "="*60)
+    print("RECURSIVE CRAWL RESULTS SUMMARY")
+    print("="*60)
+    
     for res in results:
-        print("\n========== RESULT ==========")
-        print(f"URL: {res.url}")
-        print(f"Status: {'✅ Success' if not res.error else '❌ Error'}")
-        print(f"Title: {res.title}")
-        print(f"Total Height: {res.total_height}px")
-        print(f"Page Count: {res.page_count}")
-        print(f"Screenshots: {res.screenshot_paths}")
-        print(f"Text Length: {len(res.text_content)}")
-        print(f"Links Extracted: {len(res.links)}")
+        depth = res.metadata.get('crawl_depth', 0) if res.metadata else 0
+        status = '✅ Success' if not res.error else '❌ Error'
+        indent = "  " * depth
+        
+        print(f"{indent}[Depth {depth}] {res.url}")
+        print(f"{indent}Status: {status}")
         if res.error:
-            print(f"Error: {res.error}")
-        print("=============================")
+            print(f"{indent}Error: {res.error}")
+        else:
+            print(f"{indent}Text Length: {len(res.text_content)} chars")
+            print(f"{indent}Links Found: {len(res.links)}")
+        print()
+
 
 if __name__ == "__main__":
+    import asyncio
+    import time
     asyncio.run(main())
