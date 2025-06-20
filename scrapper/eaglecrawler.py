@@ -709,7 +709,7 @@ class EnhancedCrawler:
                 return []
 
     async def _extract_text_content(self, page: Page, url: str, timestamp: int) -> Dict[str, Any]:
-        """Extract and process text content from the page
+        """Extract and process text content from the page with preserved formatting
         
         Args:
             page: Playwright Page instance
@@ -718,17 +718,19 @@ class EnhancedCrawler:
             
         Returns:
             Dictionary containing:
-            - text_content: Cleaned text
+            - text_content: Formatted text with preserved structure
             - html_content: Raw HTML (if enabled)
             - links: List of URLs
             - metadata: Extracted metadata
             
         Notes:
+            - Preserves HTML formatting as markdown-like text
             - Uses configured content selectors
             - Saves text/HTML to files
-            - Extracts links/images/metadata"""
+            - Extracts links/images/metadata
+        """
         try:
-            # Get page content using multiple strategies
+            # Get page content using multiple strategies with formatting preservation
             content_data = await page.evaluate(f"""
                 () => {{
                     const result = {{
@@ -755,8 +757,211 @@ class EnhancedCrawler:
                         contentElement = document.body;
                     }}
                     
-                    // Extract text content
-                    result.text = contentElement.textContent || contentElement.innerText || '';
+                    // Function to convert HTML to formatted text while preserving structure
+                    function htmlToFormattedText(element) {{
+                        let text = '';
+                        
+                        function processNode(node, depth = 0) {{
+                            const indent = '  '.repeat(depth);
+                            
+                            if (node.nodeType === Node.TEXT_NODE) {{
+                                const textContent = node.textContent.trim();
+                                if (textContent) {{
+                                    text += textContent + ' ';
+                                }}
+                                return;
+                            }}
+                            
+                            if (node.nodeType !== Node.ELEMENT_NODE) {{
+                                return;
+                            }}
+                            
+                            const tagName = node.tagName.toLowerCase();
+                            
+                            // Handle different HTML elements with appropriate formatting
+                            switch (tagName) {{
+                                case 'h1':
+                                    text += '\\n\\n# ';
+                                    break;
+                                case 'h2':
+                                    text += '\\n\\n## ';
+                                    break;
+                                case 'h3':
+                                    text += '\\n\\n### ';
+                                    break;
+                                case 'h4':
+                                    text += '\\n\\n#### ';
+                                    break;
+                                case 'h5':
+                                    text += '\\n\\n##### ';
+                                    break;
+                                case 'h6':
+                                    text += '\\n\\n###### ';
+                                    break;
+                                case 'p':
+                                    text += '\\n\\n';
+                                    break;
+                                case 'br':
+                                    text += '\\n';
+                                    return; // br is self-closing
+                                case 'hr':
+                                    text += '\\n\\n---\\n\\n';
+                                    return; // hr is self-closing
+                                case 'div':
+                                case 'section':
+                                case 'article':
+                                    text += '\\n';
+                                    break;
+                                case 'blockquote':
+                                    text += '\\n\\n> ';
+                                    break;
+                                case 'pre':
+                                    text += '\\n\\n```\\n';
+                                    break;
+                                case 'code':
+                                    if (node.parentElement && node.parentElement.tagName.toLowerCase() !== 'pre') {{
+                                        text += '`';
+                                    }}
+                                    break;
+                                case 'strong':
+                                case 'b':
+                                    text += '**';
+                                    break;
+                                case 'em':
+                                case 'i':
+                                    text += '*';
+                                    break;
+                                case 'u':
+                                    text += '_';
+                                    break;
+                                case 'del':
+                                case 's':
+                                    text += '~~';
+                                    break;
+                                case 'ul':
+                                    text += '\\n';
+                                    break;
+                                case 'ol':
+                                    text += '\\n';
+                                    break;
+                                case 'li':
+                                    const listParent = node.closest('ol, ul');
+                                    if (listParent && listParent.tagName.toLowerCase() === 'ol') {{
+                                        const index = Array.from(listParent.children).indexOf(node) + 1;
+                                        text += `\\n${{indent}}${{index}}. `;
+                                    }} else {{
+                                        text += `\\n${{indent}}- `;
+                                    }}
+                                    break;
+                                case 'table':
+                                    text += '\\n\\n';
+                                    break;
+                                case 'tr':
+                                    text += '\\n';
+                                    break;
+                                case 'td':
+                                case 'th':
+                                    text += ' | ';
+                                    break;
+                                case 'thead':
+                                    text += '\\n';
+                                    break;
+                                case 'tbody':
+                                    text += '\\n';
+                                    break;
+                                case 'a':
+                                    const href = node.getAttribute('href');
+                                    if (href) {{
+                                        text += '[';
+                                    }}
+                                    break;
+                                case 'img':
+                                    const alt = node.getAttribute('alt') || '';
+                                    const src = node.getAttribute('src') || '';
+                                    text += `![$${{alt}}]($${{src}})`;
+                                    return; // img is self-closing
+                                case 'sup':
+                                    text += '^';
+                                    break;
+                                case 'sub':
+                                    text += '_';
+                                    break;
+                                case 'span':
+                                    // Check for special classes that might indicate formatting
+                                    const className = node.className || '';
+                                    if (className.includes('bold') || className.includes('strong')) {{
+                                        text += '**';
+                                    }} else if (className.includes('italic') || className.includes('emphasis')) {{
+                                        text += '*';
+                                    }}
+                                    break;
+                            }}
+                            
+                            // Process child nodes
+                            for (const child of node.childNodes) {{
+                                processNode(child, depth + 1);
+                            }}
+                            
+                            // Handle closing tags
+                            switch (tagName) {{
+                                case 'h1':
+                                case 'h2':
+                                case 'h3':
+                                case 'h4':
+                                case 'h5':
+                                case 'h6':
+                                    text += '\\n';
+                                    break;
+                                case 'pre':
+                                    text += '\\n```\\n';
+                                    break;
+                                case 'code':
+                                    if (node.parentElement && node.parentElement.tagName.toLowerCase() !== 'pre') {{
+                                        text += '`';
+                                    }}
+                                    break;
+                                case 'strong':
+                                case 'b':
+                                    text += '**';
+                                    break;
+                                case 'em':
+                                case 'i':
+                                    text += '*';
+                                    break;
+                                case 'u':
+                                    text += '_';
+                                    break;
+                                case 'del':
+                                case 's':
+                                    text += '~~';
+                                    break;
+                                case 'a':
+                                    const href = node.getAttribute('href');
+                                    if (href) {{
+                                        text += `]($${{href}})`;
+                                    }}
+                                    break;
+                                case 'sup':
+                                case 'sub':
+                                    text += ' ';
+                                    break;
+                                case 'span':
+                                    const className = node.className || '';
+                                    if (className.includes('bold') || className.includes('strong')) {{
+                                        text += '**';
+                                    }} else if (className.includes('italic') || className.includes('emphasis')) {{
+                                        text += '*';
+                                    }}
+                                    break;
+                            }}
+                        }}
+                        
+                        processNode(element);
+                        return text;
+                    }}
+                    
+                    // Extract formatted text content
+                    result.text = htmlToFormattedText(contentElement);
                     
                     // Extract HTML if needed
                     if ({json.dumps(self.save_html)}) {{
@@ -803,9 +1008,9 @@ class EnhancedCrawler:
                 }}
             """)
             
-            # Clean text if requested
+            # Clean text if requested (but preserve formatting)
             if self.clean_text and content_data['text']:
-                content_data['text'] = self._clean_text(content_data['text'])
+                content_data['text'] = self._clean_formatted_text(content_data['text'])
             
             # Save text content to file
             text_filename = f"{self._sanitize_filename(url, 'content')}_{timestamp}.txt"
@@ -838,7 +1043,7 @@ class EnhancedCrawler:
                 with open(html_path, 'w', encoding='utf-8') as f:
                     f.write(content_data['html'])
             
-            print(f"  📝 Extracted {len(content_data['text'])} characters of text")
+            print(f"  📝 Extracted {len(content_data['text'])} characters of formatted text")
             print(f"  🔗 Found {len(content_data['links'])} links and {len(content_data['images'])} images")
             
             return {
@@ -863,33 +1068,50 @@ class EnhancedCrawler:
                 'links': [],
                 'metadata': {'error': str(e)}
             }
-    
-    def _clean_text(self, text: str) -> str:
-        """Clean and format extracted text
+
+    def _clean_formatted_text(self, text: str) -> str:
+        """Clean formatted text while preserving structure
         
         Args:
-            text: Raw extracted text
+            text: Raw extracted formatted text
             
         Returns:
-            Cleaned text with:
-            - Normalized whitespace
-            - Removed control characters
-            - Reduced special character repetition
+            Cleaned text with preserved formatting but normalized whitespace
             
         Notes:
-            - Preserves paragraph structure
-            - Removes encoding artifacts"""
-        # Remove excessive whitespace
-        text = re.sub(r'\s+', ' ', text)
+            - Preserves markdown-like formatting
+            - Normalizes spacing between elements
+            - Removes excessive empty lines
+        """
+        # Normalize line endings
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
         
-        # Remove excessive newlines
-        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+        # Remove excessive whitespace but preserve intentional spacing
+        lines = text.split('\n')
+        cleaned_lines = []
         
-        # Clean up common artifacts
+        for line in lines:
+            # Clean up each line but preserve indentation
+            stripped = line.rstrip()
+            if stripped or (cleaned_lines and not cleaned_lines[-1].strip()):
+                # Keep line if it has content, or if it's an empty line after content
+                cleaned_lines.append(stripped)
+        
+        # Rejoin lines
+        text = '\n'.join(cleaned_lines)
+        
+        # Reduce excessive consecutive empty lines to maximum of 2
+        text = re.sub(r'\n{4,}', '\n\n\n', text)
+        
+        # Clean up spacing around formatting markers
+        text = re.sub(r'\s+([*_`~])', r' \1', text)  # Space before formatting
+        text = re.sub(r'([*_`~])\s+', r'\1 ', text)  # Space after formatting
+        
+        # Clean up excessive spaces
+        text = re.sub(r' {3,}', '  ', text)  # Max 2 consecutive spaces
+        
+        # Remove control characters but preserve formatting
         text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]', '', text)
-        
-        # Remove repeated special characters
-        text = re.sub(r'([^\w\s])\1{3,}', r'\1\1', text)
         
         return text.strip()
 
