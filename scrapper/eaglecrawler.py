@@ -136,10 +136,6 @@ class ContentAnalyzer:
             - Filters out small/invisible elements
             - Sorts by vertical position and priority
         """
-    
-    @staticmethod
-    async def get_content_sections(page: Page) -> List[Dict[str, Any]]:
-        """Get semantic content sections with priorities"""
         try:
             sections = await page.evaluate("""
                 () => {
@@ -419,6 +415,7 @@ class EnhancedCrawler:
         url_patterns: List of regex patterns that URLs must match to be crawled
         exclude_patterns: List of regex patterns to exclude from crawling
         delay_between_requests: Delay in seconds between requests to be respectful
+        min_content_length: Minimum character threshold for content detection
     """
     
     def __init__(
@@ -443,12 +440,14 @@ class EnhancedCrawler:
         clean_text: bool = True,
         save_html: bool = False,
         content_selectors: List[str] = None,
-        # NEW: Recursive crawling settings
+        # Recursive crawling settings
         max_depth: int = 1,
         same_domain_only: bool = True,
         url_patterns: List[str] = None,
         exclude_patterns: List[str] = None,
-        delay_between_requests: float = 1.0
+        delay_between_requests: float = 1.0,
+        # NEW: Content detection settings
+        min_content_length: int = 300  # Minimum characters to consider valid content
     ):
         """
         Initialize the enhanced crawler
@@ -471,6 +470,7 @@ class EnhancedCrawler:
             clean_text: Clean and format extracted text
             save_html: Save raw HTML content
             content_selectors: Custom CSS selectors for content extraction
+            min_content_length: Minimum character threshold for content detection
         """
         self.mode = mode.lower()
         if self.mode not in ["visual", "text", "both"]:
@@ -519,13 +519,15 @@ class EnhancedCrawler:
         self.exclude_patterns = [re.compile(pattern) for pattern in (exclude_patterns or [])]
         self.delay_between_requests = delay_between_requests
         
-        # NEW: Track crawling state
+        # Content detection settings
+        self.min_content_length = min_content_length
+        
+        # Track crawling state
         self.visited_urls = set()
         self.crawl_queue = []  # List of (url, depth) tuples
         self.allowed_domains = set()  # Domains we're allowed to crawl
         self.crawl_results = []
         self.url_to_depth = {}  # Track depth of each URL
-        
         
         print(f"Initialized crawler with A4 dimensions: {self.a4_width}x{self.a4_height}px at {page_width}DPI")
     
@@ -720,6 +722,76 @@ class EnhancedCrawler:
             filename = f"{filename}_{suffix}"
         return filename[:100]  # Limit length
 
+    async def _find_optimal_content_element(self, page: Page) -> Optional[str]:
+        """Intelligently find the best content container using heuristics
+        
+        Args:
+            page: Playwright Page instance
+            
+        Returns:
+            HTML string of the best content container, or None if not found
+        """
+        try:
+            return await page.evaluate("""() => {
+                // Get all content container candidates
+                const candidates = Array.from(document.querySelectorAll(
+                    'div, section, article, main, .content, .container, .main, .body'
+                )).filter(el => {
+                    // Filter out small/invisible elements
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 300 && rect.height > 200 && 
+                           getComputedStyle(el).display !== 'none';
+                });
+
+                if (!candidates.length) return null;
+
+                // Score elements based on content characteristics
+                const scored = candidates.map(el => {
+                    const rect = el.getBoundingClientRect();
+                    const text = el.textContent || '';
+                    
+                    // Calculate text density score
+                    const area = rect.width * rect.height;
+                    const density = area > 0 ? text.length / area : 0;
+                    
+                    // Calculate structural score
+                    let structureScore = 0;
+                    if (el.tagName === 'ARTICLE') structureScore += 3;
+                    if (el.tagName === 'MAIN') structureScore += 2;
+                    if (el.classList.contains('content')) structureScore += 2;
+                    if (el.classList.contains('main')) structureScore += 1;
+                    if (el.classList.contains('container')) structureScore += 1;
+                    
+                    // Calculate position score (center of viewport)
+                    const viewportCenter = window.innerHeight / 2;
+                    const elementCenter = rect.top + (rect.height / 2);
+                    const positionScore = 1 - Math.abs(viewportCenter - elementCenter) / viewportCenter;
+                    
+                    // Calculate heading score
+                    const headingCount = el.querySelectorAll('h1, h2, h3, h4, h5, h6').length;
+                    const headingScore = Math.min(10, headingCount * 2);
+                    
+                    // Calculate paragraph score
+                    const paragraphCount = el.querySelectorAll('p').length;
+                    const paragraphScore = Math.min(10, paragraphCount * 0.5);
+                    
+                    // Final score weighting
+                    return {
+                        element: el,
+                        score: (density * 40) + (structureScore * 20) + 
+                               (positionScore * 20) + (headingScore * 10) +
+                               (paragraphScore * 10)
+                    };
+                });
+
+                // Return the highest scoring element
+                scored.sort((a, b) => b.score - a.score);
+                return scored[0].element.outerHTML;
+            }""")
+        except Exception as e:
+            print(f"Content detection error: {e}")
+            return None
+
     async def _capture_visual_content(self, page: Page, url: str, timestamp: int) -> List[str]:
         """Capture visual content with intelligent A4-sized splitting
         
@@ -865,292 +937,324 @@ class EnhancedCrawler:
             - Extracts links/images/metadata
         """
         try:
+            # NEW: Content element detection logic
+            content_element = None
+            using_fallback = False
+            temp_id = None
+            
+            # Try configured selectors first
+            for selector in self.content_selectors:
+                content_element = await page.query_selector(selector)
+                if content_element:
+                    content_text = await content_element.inner_text()
+                    if len(content_text) >= self.min_content_length:
+                        break
+                    content_element = None
+            
+            # Fallback to automatic detection if no suitable element found
+            if not content_element:
+                print("  Using fallback content detection")
+                using_fallback = True
+                optimal_html = await self._find_optimal_content_element(page)
+                if optimal_html:
+                    # Create a temporary element from the detected HTML
+                    temp_id = "__content_fallback__"
+                    await page.evaluate(f"""(temp_id, optimal_html) => {{
+                        const temp = document.createElement('div');
+                        temp.id = temp_id;
+                        temp.innerHTML = optimal_html;
+                        document.body.appendChild(temp);
+                    }}""", temp_id, optimal_html)
+                    content_element = await page.query_selector(f'#{temp_id}')
+            
+            # If still no element, use body as final fallback
+            if not content_element:
+                content_element = await page.query_selector('body')
+            
             # Get page content using multiple strategies with formatting preservation
-            content_data = await page.evaluate(f"""
-                () => {{
-                    const result = {{
-                        title: document.title || '',
-                        text: '',
-                        html: '',
-                        links: [],
-                        images: [],
-                        metadata: {{}}
-                    }};
+            content_data = await page.evaluate("""(params) => {
+                const result = {
+                    title: document.title || '',
+                    text: '',
+                    html: '',
+                    links: [],
+                    images: [],
+                    metadata: {}
+                };
+                
+                // Get the content element
+                let contentElement = document.body;
+                if (params.contentElementId) {
+                    contentElement = document.getElementById(params.contentElementId);
+                }
+                
+                if (!contentElement) {
+                    contentElement = document.body;
+                }
+                
+                // Function to convert HTML to formatted text while preserving structure
+                function htmlToFormattedText(element) {
+                    let text = '';
                     
-                    // Try to get main content using selectors
-                    const selectors = {json.dumps(self.content_selectors)};
-                    let contentElement = null;
-                    
-                    for (const selector of selectors) {{
-                        contentElement = document.querySelector(selector);
-                        if (contentElement && contentElement.textContent.trim().length > 100) {{
-                            break;
-                        }}
-                    }}
-                    
-                    if (!contentElement) {{
-                        contentElement = document.body;
-                    }}
-                    
-                    // Function to convert HTML to formatted text while preserving structure
-                    function htmlToFormattedText(element) {{
-                        let text = '';
+                    function processNode(node, depth = 0) {
+                        const indent = '  '.repeat(depth);
                         
-                        function processNode(node, depth = 0) {{
-                            const indent = '  '.repeat(depth);
-                            
-                            if (node.nodeType === Node.TEXT_NODE) {{
-                                const textContent = node.textContent.trim();
-                                if (textContent) {{
-                                    text += textContent + ' ';
-                                }}
-                                return;
-                            }}
-                            
-                            if (node.nodeType !== Node.ELEMENT_NODE) {{
-                                return;
-                            }}
-                            
-                            const tagName = node.tagName.toLowerCase();
-                            
-                            // Handle different HTML elements with appropriate formatting
-                            switch (tagName) {{
-                                case 'h1':
-                                    text += '\\n\\n# ';
-                                    break;
-                                case 'h2':
-                                    text += '\\n\\n## ';
-                                    break;
-                                case 'h3':
-                                    text += '\\n\\n### ';
-                                    break;
-                                case 'h4':
-                                    text += '\\n\\n#### ';
-                                    break;
-                                case 'h5':
-                                    text += '\\n\\n##### ';
-                                    break;
-                                case 'h6':
-                                    text += '\\n\\n###### ';
-                                    break;
-                                case 'p':
-                                    text += '\\n\\n';
-                                    break;
-                                case 'br':
-                                    text += '\\n';
-                                    return; // br is self-closing
-                                case 'hr':
-                                    text += '\\n\\n---\\n\\n';
-                                    return; // hr is self-closing
-                                case 'div':
-                                case 'section':
-                                case 'article':
-                                    text += '\\n';
-                                    break;
-                                case 'blockquote':
-                                    text += '\\n\\n> ';
-                                    break;
-                                case 'pre':
-                                    text += '\\n\\n```\\n';
-                                    break;
-                                case 'code':
-                                    if (node.parentElement && node.parentElement.tagName.toLowerCase() !== 'pre') {{
-                                        text += '`';
-                                    }}
-                                    break;
-                                case 'strong':
-                                case 'b':
-                                    text += '**';
-                                    break;
-                                case 'em':
-                                case 'i':
-                                    text += '*';
-                                    break;
-                                case 'u':
-                                    text += '_';
-                                    break;
-                                case 'del':
-                                case 's':
-                                    text += '~~';
-                                    break;
-                                case 'ul':
-                                    text += '\\n';
-                                    break;
-                                case 'ol':
-                                    text += '\\n';
-                                    break;
-                                case 'li':
-                                    const listParent = node.closest('ol, ul');
-                                    if (listParent && listParent.tagName.toLowerCase() === 'ol') {{
-                                        const index = Array.from(listParent.children).indexOf(node) + 1;
-                                        text += `\\n${{indent}}${{index}}. `;
-                                    }} else {{
-                                        text += `\\n${{indent}}- `;
-                                    }}
-                                    break;
-                                case 'table':
-                                    text += '\\n\\n';
-                                    break;
-                                case 'tr':
-                                    text += '\\n';
-                                    break;
-                                case 'td':
-                                case 'th':
-                                    text += ' | ';
-                                    break;
-                                case 'thead':
-                                    text += '\\n';
-                                    break;
-                                case 'tbody':
-                                    text += '\\n';
-                                    break;
-                                case 'a':
-                                    const href = node.getAttribute('href');
-                                    if (href) {{
-                                        text += '[';
-                                    }}
-                                    break;
-                                case 'img':
-                                    const alt = node.getAttribute('alt') || '';
-                                    const src = node.getAttribute('src') || '';
-                                    text += `![$${{alt}}]($${{src}})`;
-                                    return; // img is self-closing
-                                case 'sup':
-                                    text += '^';
-                                    break;
-                                case 'sub':
-                                    text += '_';
-                                    break;
-                                case 'span':
-                                    // Check for special classes that might indicate formatting
-                                    const className = node.className || '';
-                                    if (className.includes('bold') || className.includes('strong')) {{
-                                        text += '**';
-                                    }} else if (className.includes('italic') || className.includes('emphasis')) {{
-                                        text += '*';
-                                    }}
-                                    break;
-                            }}
-                            
-                            // Process child nodes
-                            for (const child of node.childNodes) {{
-                                processNode(child, depth + 1);
-                            }}
-                            
-                            // Handle closing tags
-                            switch (tagName) {{
-                                case 'h1':
-                                case 'h2':
-                                case 'h3':
-                                case 'h4':
-                                case 'h5':
-                                case 'h6':
-                                    text += '\\n';
-                                    break;
-                                case 'pre':
-                                    text += '\\n```\\n';
-                                    break;
-                                case 'code':
-                                    if (node.parentElement && node.parentElement.tagName.toLowerCase() !== 'pre') {{
-                                        text += '`';
-                                    }}
-                                    break;
-                                case 'strong':
-                                case 'b':
-                                    text += '**';
-                                    break;
-                                case 'em':
-                                case 'i':
-                                    text += '*';
-                                    break;
-                                case 'u':
-                                    text += '_';
-                                    break;
-                                case 'del':
-                                case 's':
-                                    text += '~~';
-                                    break;
-                                case 'a':
-                                    const href = node.getAttribute('href');
-                                    if (href) {{
-                                        text += `]($${{href}})`;
-                                    }}
-                                    break;
-                                case 'sup':
-                                case 'sub':
-                                    text += ' ';
-                                    break;
-                                case 'span':
-                                    const className = node.className || '';
-                                    if (className.includes('bold') || className.includes('strong')) {{
-                                        text += '**';
-                                    }} else if (className.includes('italic') || className.includes('emphasis')) {{
-                                        text += '*';
-                                    }}
-                                    break;
-                            }}
-                        }}
+                        if (node.nodeType === Node.TEXT_NODE) {
+                            const textContent = node.textContent.trim();
+                            if (textContent) {
+                                text += textContent + ' ';
+                            }
+                            return;
+                        }
                         
-                        processNode(element);
-                        return text;
-                    }}
+                        if (node.nodeType !== Node.ELEMENT_NODE) {
+                            return;
+                        }
+                        
+                        const tagName = node.tagName.toLowerCase();
+                        
+                        // Handle different HTML elements with appropriate formatting
+                        switch (tagName) {
+                            case 'h1':
+                                text += '\\n\\n# ';
+                                break;
+                            case 'h2':
+                                text += '\\n\\n## ';
+                                break;
+                            case 'h3':
+                                text += '\\n\\n### ';
+                                break;
+                            case 'h4':
+                                text += '\\n\\n#### ';
+                                break;
+                            case 'h5':
+                                text += '\\n\\n##### ';
+                                break;
+                            case 'h6':
+                                text += '\\n\\n###### ';
+                                break;
+                            case 'p':
+                                text += '\\n\\n';
+                                break;
+                            case 'br':
+                                text += '\\n';
+                                return; // br is self-closing
+                            case 'hr':
+                                text += '\\n\\n---\\n\\n';
+                                return; // hr is self-closing
+                            case 'div':
+                            case 'section':
+                            case 'article':
+                                text += '\\n';
+                                break;
+                            case 'blockquote':
+                                text += '\\n\\n> ';
+                                break;
+                            case 'pre':
+                                text += '\\n\\n```\\n';
+                                break;
+                            case 'code':
+                                if (node.parentElement && node.parentElement.tagName.toLowerCase() !== 'pre') {
+                                    text += '`';
+                                }
+                                break;
+                            case 'strong':
+                            case 'b':
+                                text += '**';
+                                break;
+                            case 'em':
+                            case 'i':
+                                text += '*';
+                                break;
+                            case 'u':
+                                text += '_';
+                                break;
+                            case 'del':
+                            case 's':
+                                text += '~~';
+                                break;
+                            case 'ul':
+                                text += '\\n';
+                                break;
+                            case 'ol':
+                                text += '\\n';
+                                break;
+                            case 'li':
+                                const listParent = node.closest('ol, ul');
+                                if (listParent && listParent.tagName.toLowerCase() === 'ol') {
+                                    const index = Array.from(listParent.children).indexOf(node) + 1;
+                                    text += `\\n${indent}${index}. `;
+                                } else {
+                                    text += `\\n${indent}- `;
+                                }
+                                break;
+                            case 'table':
+                                text += '\\n\\n';
+                                break;
+                            case 'tr':
+                                text += '\\n';
+                                break;
+                            case 'td':
+                            case 'th':
+                                text += ' | ';
+                                break;
+                            case 'thead':
+                                text += '\\n';
+                                break;
+                            case 'tbody':
+                                text += '\\n';
+                                break;
+                            case 'a':
+                                const href = node.getAttribute('href');
+                                if (href) {
+                                    text += '[';
+                                }
+                                break;
+                            case 'img':
+                                const alt = node.getAttribute('alt') || '';
+                                const src = node.getAttribute('src') || '';
+                                text += `![${alt}](${src})`;
+                                return; // img is self-closing
+                            case 'sup':
+                                text += '^';
+                                break;
+                            case 'sub':
+                                text += '_';
+                                break;
+                            case 'span':
+                                // Check for special classes that might indicate formatting
+                                const className = node.className || '';
+                                if (className.includes('bold') || className.includes('strong')) {
+                                    text += '**';
+                                } else if (className.includes('italic') || className.includes('emphasis')) {
+                                    text += '*';
+                                }
+                                break;
+                        }
+                        
+                        // Process child nodes
+                        for (const child of node.childNodes) {
+                            processNode(child, depth + 1);
+                        }
+                        
+                        // Handle closing tags
+                        switch (tagName) {
+                            case 'h1':
+                            case 'h2':
+                            case 'h3':
+                            case 'h4':
+                            case 'h5':
+                            case 'h6':
+                                text += '\\n';
+                                break;
+                            case 'pre':
+                                text += '\\n```\\n';
+                                break;
+                            case 'code':
+                                if (node.parentElement && node.parentElement.tagName.toLowerCase() !== 'pre') {
+                                    text += '`';
+                                }
+                                break;
+                            case 'strong':
+                            case 'b':
+                                text += '**';
+                                break;
+                            case 'em':
+                            case 'i':
+                                text += '*';
+                                break;
+                            case 'u':
+                                text += '_';
+                                break;
+                            case 'del':
+                            case 's':
+                                text += '~~';
+                                break;
+                            case 'a':
+                                const href = node.getAttribute('href');
+                                if (href) {
+                                    text += `](${href})`;
+                                }
+                                break;
+                            case 'sup':
+                            case 'sub':
+                                text += ' ';
+                                break;
+                            case 'span':
+                                const className = node.className || '';
+                                if (className.includes('bold') || className.includes('strong')) {
+                                    text += '**';
+                                } else if (className.includes('italic') || className.includes('emphasis')) {
+                                    text += '*';
+                                }
+                                break;
+                        }
+                    }
                     
-                    // Extract formatted text content
-                    result.text = htmlToFormattedText(contentElement);
-                    
-                    // Extract HTML if needed
-                    if ({json.dumps(self.save_html)}) {{
-                        result.html = contentElement.innerHTML || '';
-                    }}
-                    
-                    // Extract links
-                    if ({json.dumps(self.extract_links)}) {{
-                        const links = Array.from(document.querySelectorAll('a[href]'));
-                        result.links = links.map(link => {{
-                            return {{
-                                url: link.href,
-                                text: link.textContent.trim(),
-                                title: link.title || '',
-                                href_attribute: link.getAttribute('href') // Keep original href for filtering
-                            }};
-                        }}).filter(link => {{
-                            // Exclude anchor links (starting with #)
-                            const originalHref = link.href_attribute;
-                            return link.url.startsWith('http') && 
-                                !originalHref.startsWith('#') &&
-                                !originalHref.startsWith('javascript:') &&
-                                !originalHref.startsWith('mailto:') &&
-                                !originalHref.startsWith('tel:');
-                        }});
-                    }}
-                    
-                    // Extract images
-                    if ({json.dumps(self.extract_images)}) {{
-                        const images = Array.from(document.querySelectorAll('img[src]'));
-                        result.images = images.map(img => {{
-                            return {{
-                                src: img.src,
-                                alt: img.alt || '',
-                                title: img.title || '',
-                                width: img.naturalWidth || img.width || 0,
-                                height: img.naturalHeight || img.height || 0
-                            }};
-                        }});
-                    }}
-                    
-                    // Extract metadata
-                    const metaTags = Array.from(document.querySelectorAll('meta'));
-                    metaTags.forEach(meta => {{
-                        if (meta.name) {{
-                            result.metadata[meta.name] = meta.content || '';
-                        }} else if (meta.property) {{
-                            result.metadata[meta.property] = meta.content || '';
-                        }}
-                    }});
-                    
-                    return result;
-                }}
-            """)
+                    processNode(element);
+                    return text;
+                }
+                
+                // Extract formatted text content
+                result.text = htmlToFormattedText(contentElement);
+                
+                // Extract HTML if needed
+                if (params.saveHtml) {
+                    result.html = contentElement.innerHTML || '';
+                }
+                
+                // Extract links
+                if (params.extractLinks) {
+                    const links = Array.from(document.querySelectorAll('a[href]'));
+                    result.links = links.map(link => {
+                        return {
+                            url: link.href,
+                            text: link.textContent.trim(),
+                            title: link.title || '',
+                            href_attribute: link.getAttribute('href') // Keep original href for filtering
+                        };
+                    }).filter(link => {
+                        // Exclude anchor links (starting with #)
+                        const originalHref = link.href_attribute;
+                        return link.url.startsWith('http') && 
+                            !originalHref.startsWith('#') &&
+                            !originalHref.startsWith('javascript:') &&
+                            !originalHref.startsWith('mailto:') &&
+                            !originalHref.startsWith('tel:');
+                    });
+                }
+                
+                // Extract images
+                if (params.extractImages) {
+                    const images = Array.from(document.querySelectorAll('img[src]'));
+                    result.images = images.map(img => {
+                        return {
+                            src: img.src,
+                            alt: img.alt || '',
+                            title: img.title || '',
+                            width: img.naturalWidth || img.width || 0,
+                            height: img.naturalHeight || img.height || 0
+                        };
+                    });
+                }
+                
+                // Extract metadata
+                const metaTags = Array.from(document.querySelectorAll('meta'));
+                metaTags.forEach(meta => {
+                    if (meta.name) {
+                        result.metadata[meta.name] = meta.content || '';
+                    } else if (meta.property) {
+                        result.metadata[meta.property] = meta.content || '';
+                    }
+                });
+                
+                return result;
+            }""", {
+                'saveHtml': self.save_html,
+                'extractLinks': self.extract_links,
+                'extractImages': self.extract_images,
+                'contentElementId': temp_id if using_fallback else None
+            })
             
             # Clean text if requested (but preserve formatting)
             if self.clean_text and content_data['text']:
@@ -1189,6 +1293,13 @@ class EnhancedCrawler:
             
             print(f"  📝 Extracted {len(content_data['text'])} characters of formatted text")
             print(f"  🔗 Found {len(content_data['links'])} links and {len(content_data['images'])} images")
+            
+            # NEW: Clean up temporary element if we used fallback
+            if using_fallback and temp_id:
+                await page.evaluate(f"""(temp_id) => {{
+                    const el = document.getElementById(temp_id);
+                    if (el) el.remove();
+                }}""", temp_id)
             
             return {
                 'text_content': content_data['text'],
@@ -1493,7 +1604,8 @@ async def main():
             r'.*[Tt]alk:.*',  # Skip talk pages
             r'.*[Uu]ser:.*',  # Skip user pages
         ],
-        delay_between_requests=1.0  # Be respectful with 1 second delays
+        delay_between_requests=1.0,  # Be respectful with 1 second delays
+        min_content_length=300  # Minimum content length threshold
     )
 
     # Run recursive crawl
