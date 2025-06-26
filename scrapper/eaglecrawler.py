@@ -13,6 +13,7 @@ from urllib.parse import urljoin, urlparse
 from dataclasses import dataclass, asdict
 import hashlib
 import re
+from collections import defaultdict
 
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
 
@@ -256,7 +257,7 @@ class ContentAnalyzer:
             sections: Content sections from get_content_sections()
             total_height: Full page height in pixels
             page_height: Viewport height in pixels
-            min_overlap: Minimum overlap between pages (px)
+            min_overlap: Minimum page overlap in pixels
             
         Returns:
             List of break point dictionaries containing:
@@ -446,8 +447,11 @@ class EnhancedCrawler:
         url_patterns: List[str] = None,
         exclude_patterns: List[str] = None,
         delay_between_requests: float = 1.0,
-        # NEW: Content detection settings
-        min_content_length: int = 300  # Minimum characters to consider valid content
+        # Content detection settings
+        min_content_length: int = 300,  # Minimum characters to consider valid content
+        # Boilerplate removal settings
+        boilerplate_shingle_size: int = 5,  # Lines per shingle for boilerplate detection
+        boilerplate_threshold: float = 0.5  # Min percentage of pages containing shingle to be considered boilerplate
     ):
         """
         Initialize the enhanced crawler
@@ -521,6 +525,10 @@ class EnhancedCrawler:
         
         # Content detection settings
         self.min_content_length = min_content_length
+        
+        # Boilerplate removal settings
+        self.boilerplate_shingle_size = boilerplate_shingle_size
+        self.boilerplate_threshold = boilerplate_threshold
         
         # Track crawling state
         self.visited_urls = set()
@@ -820,7 +828,7 @@ class EnhancedCrawler:
                 print(f"  Found {len(sections)} content sections")
             else:
                 sections = []
-            
+
             # Calculate break points
             break_points = ContentAnalyzer.find_safe_break_points(
                 sections, total_height, self.a4_height, self.min_overlap
@@ -828,8 +836,8 @@ class EnhancedCrawler:
             
             print(f"  Calculated {len(break_points)} A4 page breaks")
             
-            screenshot_paths = []
-            
+            screenshot_paths = []   
+                                        
             for i, bp in enumerate(break_points):
                 # Create filename
                 if len(break_points) == 1:
@@ -841,14 +849,14 @@ class EnhancedCrawler:
                 screenshot_path = self.output_dir / "screenshots" / filename
                 
                 # Scroll to position with smooth scrolling
-                await page.evaluate(f"""
+                await page.evaluate(f"""`
                     window.scrollTo({{
                         top: {bp['y']},
                         behavior: 'instant'
                     }});
                 """)
-                
-                # Wait for scroll and any lazy loading
+                 
+                # Wait for scroll and any lazy loading  
                 await page.wait_for_timeout(800)
                 
                 # Additional wait for images and dynamic content
@@ -1556,6 +1564,113 @@ class EnhancedCrawler:
 
         return results
 
+    def _save_cleaned_text_files(self, results: List[CrawlResult]):
+        """
+        Save cleaned text content to .txt files after boilerplate removal
+        """
+        for result in results:
+            if result.text_content and result.metadata:
+                path = result.metadata.get('text_file')
+                if path:
+                    try:
+                        with open(path, 'w', encoding='utf-8') as f:
+                            f.write(f"URL: {result.url}\n")
+                            f.write(f"Title: {result.title}\n")
+                            f.write(f"Timestamp: {result.timestamp}\n")
+                            f.write("=" * 50 + "\n\n")
+                            f.write(result.text_content)
+                    except Exception as e:
+                        print(f"Failed to save cleaned text to {path}: {e}")
+
+    def _remove_boilerplate_text(self, results: List[CrawlResult]) -> None:
+        """
+        Remove common boilerplate text (headers, footers, sidebars) from crawl results
+        
+        Args:
+            results: List of CrawlResult objects
+            
+        Notes:
+            - Groups pages by domain
+            - Uses shingling to identify common text blocks
+            - Removes lines that appear in boilerplate shingles
+        """
+        # Group results by domain
+        domain_groups = defaultdict(list)
+        for result in results:
+            if result.error or not result.text_content:
+                continue
+            parsed = urlparse(result.url)
+            domain = parsed.netloc
+            domain_groups[domain].append(result)
+
+        # Process each domain group
+        for domain, domain_results in domain_groups.items():
+            num_pages = len(domain_results)
+            if num_pages < 2:
+                continue  # Need at least 2 pages to find common patterns
+
+            print(f"\n🧹 Removing boilerplate for domain: {domain} ({num_pages} pages)")
+            
+            # Calculate threshold for boilerplate detection
+            threshold = max(2, int(num_pages * self.boilerplate_threshold))
+            shingle_size = self.boilerplate_shingle_size
+            
+            # Count shingle frequencies
+            shingle_freq = defaultdict(int)
+            for result in domain_results:
+                lines = result.text_content.splitlines()
+                for i in range(len(lines) - shingle_size + 1):
+                    shingle = tuple(lines[i:i + shingle_size])
+                    shingle_freq[shingle] += 1
+
+            # Identify boilerplate shingles
+            boilerplate_set = set()
+            for shingle, count in shingle_freq.items():
+                if count >= threshold:
+                    boilerplate_set.add(shingle)
+            
+            if not boilerplate_set:
+                print(f"  No boilerplate found for {domain}")
+                continue
+            
+            print(f"  Found {len(boilerplate_set)} boilerplate patterns")
+            
+            # Remove boilerplate from each page
+            for result in domain_results:
+                lines = result.text_content.splitlines()
+                is_boilerplate = [False] * len(lines)
+                
+                # Mark lines that are part of boilerplate shingles
+                for i in range(len(lines) - shingle_size + 1):
+                    shingle = tuple(lines[i:i + shingle_size])
+                    if shingle in boilerplate_set:
+                        for j in range(i, i + shingle_size):
+                            is_boilerplate[j] = True
+                
+                # Filter out boilerplate lines
+                cleaned_lines = [
+                    line for i, line in enumerate(lines)
+                    if not is_boilerplate[i]
+                ]
+                
+                # Calculate stats
+                original_line_count = len(lines)
+                removed_line_count = sum(is_boilerplate)
+                removal_percentage = (removed_line_count / original_line_count) * 100
+                
+                # Update result
+                result.text_content = "\n".join(cleaned_lines)
+                result.metadata["boilerplate_removed"] = {
+                    "original_lines": original_line_count,
+                    "removed_lines": removed_line_count,
+                    "removal_percentage": round(removal_percentage, 1),
+                    "shingle_size": shingle_size,
+                    "threshold": threshold
+                }
+                
+                print(f"  Removed {removed_line_count}/{original_line_count} lines "
+                      f"({removal_percentage:.1f}%) from {result.url}")
+
     async def crawl(self, urls: List[str]) -> List[CrawlResult]:
         """
         Main crawl method - now supports both single-level and recursive crawling
@@ -1568,10 +1683,17 @@ class EnhancedCrawler:
         """
         if self.max_depth <= 1:
             # Use original single-level crawling
-            return await self._crawl_single_level(urls)
+            results = await self._crawl_single_level(urls)
         else:
             # Use new recursive crawling
-            return await self.crawl_recursive(urls)
+            results = await self.crawl_recursive(urls)
+        
+        # Post-process text content to remove boilerplate
+        if self.mode in ["text", "both"] and results:
+            self._remove_boilerplate_text(results)
+            self._save_cleaned_text_files(results)
+        
+        return results
 
 # Updated main function to demonstrate recursive crawling
 async def main():
@@ -1588,7 +1710,7 @@ async def main():
         smart_splitting=True,
         preserve_context=True,
         headless=True,
-        max_pages=1,  # Limit total pages
+        max_pages=3,  # Limit total pages
         wait_time=2000,
         save_html=False,
         clean_text=True,
@@ -1605,15 +1727,18 @@ async def main():
             r'.*[Uu]ser:.*',  # Skip user pages
         ],
         delay_between_requests=1.0,  # Be respectful with 1 second delays
-        min_content_length=300  # Minimum content length threshold
+        min_content_length=300,  # Minimum content length threshold
+        # Boilerplate removal settings
+        boilerplate_shingle_size=3,
+        boilerplate_threshold=0.5
     )
 
-    # Run recursive crawl
-    results = await crawler.crawl_recursive(test_urls)
+    # Run crawl
+    results = await crawler.crawl(test_urls)
 
     # Print results summary
     print("\n" + "="*60)
-    print("RECURSIVE CRAWL RESULTS SUMMARY")
+    print("CRAWL RESULTS SUMMARY")
     print("="*60)
     
     for res in results:
@@ -1628,6 +1753,11 @@ async def main():
         else:
             print(f"{indent}Text Length: {len(res.text_content)} chars")
             print(f"{indent}Links Found: {len(res.links)}")
+            # Show boilerplate removal stats if available
+            if "boilerplate_removed" in res.metadata:
+                bp = res.metadata["boilerplate_removed"]
+                print(f"{indent}Boilerplate Removed: {bp['removed_lines']} lines "
+                      f"({bp['removal_percentage']}%)")
         print()
 
 
