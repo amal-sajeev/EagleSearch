@@ -1699,7 +1699,7 @@ class EnhancedCrawler:
 async def main():
     # Sample URLs for testing recursive crawling
     test_urls = [
-        "https://www.reva.edu.in/vice-chancellor"
+        "https://en.wikipedia.org/wiki/Floating_point_operations_per_second"
     ]
 
     # Initialize crawler with recursive settings
@@ -1710,7 +1710,7 @@ async def main():
         smart_splitting=True,
         preserve_context=True,
         headless=True,
-        max_pages=3,  # Limit total pages
+        max_pages=5,  # Limit total pages
         wait_time=2000,
         save_html=False,
         clean_text=True,
@@ -1718,14 +1718,47 @@ async def main():
         max_depth=3,  # Crawl 3 levels deep
         same_domain_only=True,
         url_patterns=[
-            r'.*reva\.edu\.in/.*',  # Only Reva articles
+            r'.*wikipedia\.org/.*',  # Only Wikipedia articles
         ],
         exclude_patterns=[
-            r'.*\.(jpg|jpeg|png|gif|pdf|doc)$',  # Skip media files
-            r'.*[Cc]ategory:.*',  # Skip Wikipedia categories
-            r'.*[Tt]alk:.*',  # Skip talk pages
-            r'.*[Uu]ser:.*',  # Skip user pages
-        ],
+        r'.*\.(jpg|jpeg|png|gif|pdf|doc)$',  # Skip media files
+        r'.*[Cc]ategory:.*',  # Skip Wikipedia categories
+        r'.*[Tt]alk:.*',  # Skip talk pages
+        r'.*[Uu]ser:.*',  # Skip user pages
+        
+        # Wikipedia namespace pages
+        r'.*[Ww]ikipedia:.*',  # Wikipedia project pages
+        r'.*[Hh]elp:.*',  # Help pages
+        r'.*[Tt]emplate:.*',  # Template pages
+        r'.*[Mm]edia[Ww]iki:.*',  # MediaWiki system pages
+        r'.*[Ss]pecial:.*',  # Special pages
+        r'.*[Ff]ile:.*',  # File description pages
+        
+        # Specific page types
+        r'.*/wiki/[Ll]ist_of_.*',  # List pages (often meta-content)
+        r'.*/wiki/.*[Dd]isambiguation.*',  # Disambiguation pages
+        r'.*/wiki/.*_\(disambiguation\)',  # Disambiguation pages
+        r'.*[Pp]ortal:.*',  # Portal pages
+        r'.*[Bb]ook:.*',  # Book pages
+        r'.*[Dd]raft:.*',  # Draft pages
+        
+        # Administrative and meta pages
+        r'.*/wiki/.*[Aa]rchive.*',  # Archive pages
+        r'.*/wiki/.*[Ll]og.*',  # Log pages
+        r'.*/wiki/[Mm]ain_[Pp]age',  # Main page
+        r'.*/wiki/[Cc]urrent_events',  # Current events
+        
+        # Action pages and parameters
+        r'.*[?&]action=.*',  # Pages with action parameters
+        r'.*[?&]oldid=.*',  # Old revisions
+        r'.*[?&]diff=.*',  # Diff pages
+        r'.*[?&]printable=.*',  # Printable versions
+        
+        # External links and references
+        r'.*#cite_note.*',  # Citation anchors
+        r'.*#References.*',  # Reference sections
+        r'.*#External_links.*',  # External links sections
+    ],
         delay_between_requests=1.0,  # Be respectful with 1 second delays
         min_content_length=300,  # Minimum content length threshold
         # Boilerplate removal settings
