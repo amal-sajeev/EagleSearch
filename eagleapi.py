@@ -32,14 +32,6 @@ app = FastAPI()
 @app.post("/ingest")
 def Embed_and_ingest_files(files: Union[list[UploadFile],UploadFile], client:str, bot:str, txt_collection:str, img_collection:str, makeifnot:bool=True):
 
-    # return(eagle.ingest(
-    #         client_id= client,
-    #         bot_id = bot,
-    #         files = files,
-    #         txt_collection = txt_collection,
-    #         img_collection= img_collection ,
-    #         makeifnot= makeifnot
-    #     ))
     try:
         return(eagle.ingest(
             client_id= client,
@@ -91,8 +83,12 @@ def Query_for_extracts_by_text(query:str, imgcollection:str="", txtcollection:st
         print(f"ERROR QUERYING ON {datetime.now().strftime('%Y_%m_%d')} WITH QUERY [{query}] AT COLLECTIONS {imgcollection},{txtcollection} : {e}")
         return(f"ERRR:{str(e)}")
 
-@app.get("/makecol")
-def create_or_find_collection(name:str, text:bool):
+@app.get("/collection/{name}")
+def find_collection(name:str):
+    return(eagle._find_collection(name))
+
+@app.post("/collection/create")
+def make_collection(name:str, text:bool):
     """Create a collection if it doesn't exist and return the details, or return the details of a collection if it does exist.
 
     Args:
@@ -103,13 +99,15 @@ def create_or_find_collection(name:str, text:bool):
     eagle._setup_collection(name,text)
     return(eagle._find_collection(name))
 
-@app.get("/deletecol")
+@app.post("/collection/delete")
 def delete_collection(name:str):
     return(eagle._delete_collection(name))
 
-@app.get("/allcolumns")
+
+@app.get("/allcols")
 def get_all_collections():
     try:
         return(eagle.get_collections())
     except Exception as e:
         print(f"ERROR GETTING ALL COLLECTIONS ON {datetime.now().strftime('%Y_%m_%d')}: {e}")
+
