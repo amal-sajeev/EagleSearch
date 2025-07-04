@@ -204,7 +204,7 @@ async def get_job_stats() -> Dict:
 # Long-running function that runs in a separate thread
 def long_running_function_sync(job_id: str,
         urls:Union[str,List[str]],
-        mode: str = "visual",
+        mode: str = "text",
         output_dir: str = "crawler_output",
         # A4 visual settings
         page_width: int = 1920,
@@ -290,11 +290,44 @@ def long_running_function_sync(job_id: str,
         print(f"Job {job_id} failed: {str(e)}")
 
 # Async wrapper for the long-running function
-async def long_running_function(job_id: str, param1: str, param2: int, param3: Optional[str] = None):
+async def long_running_function(job_id: str,
+        urls:Union[str,List[str]],
+        mode: str = "text",
+        output_dir: str = "crawler_output",
+        # A4 visual settings
+        page_width: int = 1920,
+        min_overlap: int = 50,
+        smart_splitting: bool = True,
+        preserve_context: bool = True,
+        # General settings
+        wait_time: int = 3000,
+        headless: bool = True,
+        max_pages: int = 10,
+        page_timeout: int = 60000,
+        navigation_timeout: int = 30000,
+        retry_attempts: int = 2,
+        # Text mode specific settings
+        extract_links: bool = True,
+        extract_images: bool = True,
+        clean_text: bool = True,
+        save_html: bool = False,
+        content_selectors: List[str] = None,
+        # Recursive crawling settings
+        max_depth: int = 1,
+        same_domain_only: bool = True,
+        url_patterns: List[str] = None,
+        exclude_patterns: List[str] = None,
+        delay_between_requests: float = 1.0,
+        # Content detection settings
+        min_content_length: int = 300,  # Minimum characters to consider valid content
+        # Boilerplate removal settings
+        boilerplate_shingle_size: int = 5,  # Lines per shingle for boilerplate detection
+        boilerplate_threshold: float = 0.5  # Min percentage of pages containing shingle to be considered boilerplate
+        ):
     """
     Async wrapper that runs the long-running function in a separate thread
     """
-    await run_in_executor(EagleCrawler, job_id, param1, param2, param3)
+    await run_in_executor(EagleCrawler.crawl, job_id, urls, mode, output_dir, page_width, min_overlap, smart_splitting, preserve_context, wait_time, headless, max_pages, page_timeout, navigation_timeout, retry_attempts, extract_links, extract_images, clean_text, save_html, content_selectors, max_depth, same_domain_only, url_patterns, exclude_patterns, delay_between_requests, min_content_length, boilerplate_shingle_size, boilerplate_threshold)
 
 # Initialize database indexes
 def init_database():
