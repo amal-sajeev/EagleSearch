@@ -1,8 +1,0 @@
-URL: https://www.reva.edu.in/
-Title: 
-Timestamp: 1751540759.440781
-==================================================
-
-[**](javascript:void(0))function getParam(a){return(a=RegExp("[?\x26]"+a+"\x3d([^\x26]*)").exec(window.location.search))&&decodeURIComponent(a[1].replace(/\+/g," "))}function getExpiryRecord(a){var b=7776E6;b=(new Date).getTime()+b;return{value:a,expiryDate:b}}
-function addGclid(){var a=getParam("gclid"),b=["gclid_field","gclid_field"],d=null,e,c=getParam("gclsrc");c=!c||-1!==c.indexOf("aw");b.forEach(function(f){document.getElementById(f)&&(e=document.getElementById(f))});a&&c&&(d=getExpiryRecord(a),localStorage.setItem("gclid",JSON.stringify(d)));b=(a=d||JSON.parse(localStorage.getItem("gclid")))&&(new Date).getTime()<a.expiryDate;e&&b&&(e.value=a.value)}window.addEventListener("load",addGclid);
-  }, 3000); ](https://reva-university.my.site.com/StudentPortal/s/login/)

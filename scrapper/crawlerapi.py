@@ -72,10 +72,6 @@ class CrawlRequest(BaseModel):
     boilerplate_shingle_size: int = Field(5, description = "Lines per shingle for boilerplate detection")  
     boilerplate_threshold: float = Field(0.5, description = "Minimum percentage of pages containing shingle to be considered boilerplate")
 
-    param1: str = Field(..., description="First parameter")
-    param2: int = Field(..., ge=1, description="Second parameter (must be >= 1)")
-    param3: Optional[str] = Field(None, description="Optional third parameter")
-
 class JobResponse(BaseModel):
     job_id: str
     status: JobStatus
@@ -106,8 +102,8 @@ def create_job_in_db_sync(params: Dict[str, Any]) -> str:
         "params": params,
         "result": None,
         "error": None,
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": str(datetime.now()),
+        "updated_at": str(datetime.now()),
         "completed_at": None,
         "progress": 0
     }
@@ -119,7 +115,7 @@ def update_job_status_sync(job_id: str, status: JobStatus, **kwargs):
     """Update job status in MongoDB (synchronous)"""
     update_data = {
         "status": status,
-        "updated_at": datetime.utcnow()
+        "updated_at": str(datetime.now())
     }
     update_data.update(kwargs)
     
@@ -246,7 +242,7 @@ def long_running_function_sync(job_id: str,
         update_job_status_sync(job_id, JobStatus.RUNNING, progress=0)
         
         # Begin crawl
-        results = EagleCrawler.crawl(urls)
+        results =  EagleCrawler.crawl(urls)
         result = []
         # Simulate final result
         for res in results:
@@ -273,7 +269,7 @@ def long_running_function_sync(job_id: str,
             job_id, 
             JobStatus.COMPLETED, 
             result=result,
-            completed_at=datetime.utcnow(),
+            completed_at=str(datetime.now()),
             progress=100
         )
         
@@ -285,7 +281,7 @@ def long_running_function_sync(job_id: str,
             job_id,
             JobStatus.FAILED,
             error=str(e),
-            completed_at=datetime.utcnow()
+            completed_at=str(datetime.now())
         )
         print(f"Job {job_id} failed: {str(e)}")
 
@@ -327,7 +323,7 @@ async def long_running_function(job_id: str,
     """
     Async wrapper that runs the long-running function in a separate thread
     """
-    await run_in_executor(EagleCrawler.crawl, job_id, urls, mode, output_dir, page_width, min_overlap, smart_splitting, preserve_context, wait_time, headless, max_pages, page_timeout, navigation_timeout, retry_attempts, extract_links, extract_images, clean_text, save_html, content_selectors, max_depth, same_domain_only, url_patterns, exclude_patterns, delay_between_requests, min_content_length, boilerplate_shingle_size, boilerplate_threshold)
+    await run_in_executor(EagleCrawler.crawl, job_id, urls)
 
 # Initialize database indexes
 def init_database():
@@ -362,15 +358,38 @@ async def create_job(crawl_request: CrawlRequest, background_tasks: BackgroundTa
     """
     try:
         # Create job in database
-        job_id = await create_job_in_db(crawl_request.dict())
+        job_id = await create_job_in_db(crawl_request.model_dump())
         
         # Add the long-running function to background tasks
         background_tasks.add_task(
             long_running_function,
             job_id,
-            crawl_request.param1,
-            crawl_request.param2,
-            crawl_request.param3
+            crawl_request.urls,
+            crawl_request.mode,
+            crawl_request.output_dir,
+            crawl_request.page_width,
+            crawl_request.min_overlap,
+            crawl_request.smart_splitting,
+            crawl_request.preserve_context,
+            crawl_request.wait_time,
+            crawl_request.headless,
+            crawl_request.max_pages,
+            crawl_request.page_timeout,
+            crawl_request.navigation_timeout,
+            crawl_request.retry_attempts,
+            crawl_request.extract_links,
+            crawl_request.extract_images,
+            crawl_request.clean_text,
+            crawl_request.save_html,
+            crawl_request.content_selectors,
+            crawl_request.max_depth,
+            crawl_request.same_domain_only,
+            crawl_request.url_patterns,
+            crawl_request.exclude_patterns,
+            crawl_request.delay_between_requests,
+            crawl_request.min_content_length,
+            crawl_request.boilerplate_shingle_size,
+            crawl_request.boilerplate_threshold
         )
         
         return JobResponse(
