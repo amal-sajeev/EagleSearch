@@ -14,7 +14,7 @@ from dataclasses import dataclass, asdict
 import hashlib
 import re
 from collections import defaultdict
-
+from datetime import datetime
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
 
 
@@ -389,7 +389,7 @@ class ContentAnalyzer:
         return break_points
 
 
-class EnhancedCrawler:
+class EagleCrawler:
     """
     Enhanced website crawler with visual/text modes and page splitting
     
@@ -800,7 +800,7 @@ class EnhancedCrawler:
             print(f"Content detection error: {e}")
             return None
 
-    async def _capture_visual_content(self, page: Page, url: str, timestamp: int) -> List[str]:
+    async def _capture_visual_content(self, page: Page, url: str, timestamp: str) -> List[str]:
         """Capture visual content with intelligent A4-sized splitting
         
         Args:
@@ -923,7 +923,7 @@ class EnhancedCrawler:
                 print(f"  Fallback A4 screenshot also failed: {fallback_error}")
                 return []
 
-    async def _extract_text_content(self, page: Page, url: str, timestamp: int) -> Dict[str, Any]:
+    async def _extract_text_content(self, page: Page, url: str, timestamp: str) -> Dict[str, Any]:
         """Extract and process text content from the page with preserved formatting
         
         Args:
@@ -1396,7 +1396,7 @@ class EnhancedCrawler:
         for attempt in range(self.retry_attempts + 1):
             try:
                 print(f"🌐 Processing {url} (attempt {attempt + 1}/{self.retry_attempts + 1})")
-                timestamp = int(time.time())
+                timestamp = datetime.now().timestamp()
                 await page.goto(url, wait_until='load')
                 await page.wait_for_timeout(self.wait_time)
 
@@ -1430,7 +1430,7 @@ class EnhancedCrawler:
         # Return error result if all retries failed
         return CrawlResult(
             url=url,
-            timestamp=time.time(),
+            timestamp=str(datetime.now().timestamp()),
             mode=self.mode,
             error=last_error
         )
@@ -1498,7 +1498,7 @@ class EnhancedCrawler:
                     # Add error result
                     error_result = CrawlResult(
                         url=current_url,
-                        timestamp=time.time(),
+                        timestamp=str(datetime.now().timestamp()),
                         mode=self.mode,
                         error=str(e),
                         metadata={'crawl_depth': current_depth}
@@ -1671,16 +1671,18 @@ class EnhancedCrawler:
                 print(f"  Removed {removed_line_count}/{original_line_count} lines "
                       f"({removal_percentage:.1f}%) from {result.url}")
 
-    async def crawl(self, urls: List[str]) -> List[CrawlResult]:
+    async def crawl(self, urls: Union[str,List[str]]) -> List[CrawlResult]:
         """
         Main crawl method - now supports both single-level and recursive crawling
         
         Args:
-            urls: List of URLs to crawl
+            urls: URL or List of URLs to crawl
             
         Returns:
             List of CrawlResult objects
         """
+        if type(urls) == str:
+            urls = [urls]
         if self.max_depth <= 1:
             # Use original single-level crawling
             results = await self._crawl_single_level(urls)
@@ -1699,11 +1701,11 @@ class EnhancedCrawler:
 async def main():
     # Sample URLs for testing recursive crawling
     test_urls = [
-        "https://en.wikipedia.org/wiki/Floating_point_operations_per_second"
+        "https://www.reva.edu.in"
     ]
 
     # Initialize crawler with recursive settings
-    crawler = EnhancedCrawler(
+    crawler = EagleCrawler(
         mode="text",
         output_dir="crawler_output_recursive",
         page_width=1920,
@@ -1717,9 +1719,9 @@ async def main():
         # Recursive crawling settings
         max_depth=3,  # Crawl 3 levels deep
         same_domain_only=True,
-        url_patterns=[
-            r'.*wikipedia\.org/.*',  # Only Wikipedia articles
-        ],
+        # url_patterns=[
+        #     r'.*wikipedia\.org/.*',  # Only Wikipedia articles
+        # ],
         exclude_patterns=[
         r'.*\.(jpg|jpeg|png|gif|pdf|doc)$',  # Skip media files
         r'.*[Cc]ategory:.*',  # Skip Wikipedia categories
