@@ -43,7 +43,7 @@ class CrawlResult:
     html_content: str = ""
     status_code: int = 0
     title: str = ""
-    timestamp: float = 0
+    timestamp: datetime = datetime.now()  # Change to datetime
     total_height: int = 0
     page_count: int = 0
     links: List[str] = None

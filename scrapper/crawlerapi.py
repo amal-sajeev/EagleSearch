@@ -10,16 +10,18 @@ from datetime import datetime
 import os
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import logging
 
 from eaglecrawler import EagleCrawler
 
-app = FastAPI(title="FastAPI + MongoDB Job System (Pure PyMongo)")
+app = FastAPI(title="EagleCrawler API")
+logger = logging.getLogger("uvicorn")
 
 # MongoDB connection
 MONGODB_URL = os.getenv("MONGODB_URL", "")
 if MONGODB_URL == "":
     raise Exception("Mongodb connection string is empty")
-DATABASE_NAME = "job_system"
+DATABASE_NAME = "crawler_jobs"
 COLLECTION_NAME = "jobs"
 
 # Thread pool for database operations
@@ -40,37 +42,37 @@ class JobStatus(str, Enum):
 # Request models
 class CrawlRequest(BaseModel):
     urls: Union[str,List[str]] = Field(...,description="URL or List of URLs to crawl")
-    mode: str = Field("text", description = "Web crawling mode, 'visual', 'text', or 'both' ")
-    output_dir: str = Field("crawler_output", description = "Output directory path")
+    mode: str = Field("text", description="Web crawling mode, 'visual', 'text', or 'both'")
+    output_dir: str = Field("crawler_output", description="Output directory path")
     # A4 visual settings
-    page_width: int = Field(1920, description = "Width in pixel count for screenshot resolution.")
-    min_overlap: int = Field(50, description = "Minimum allowed page overlap in pixels")
-    smart_splitting: bool = Field(True, description = "Bool to enable content-aware splitting")
-    preserve_context: bool = Field(True, description = "Bool to prevent cutting important elements")
+    page_width: int = Field(1920, description="Width in pixel count for screenshot resolution")
+    min_overlap: int = Field(50, description="Minimum allowed page overlap in pixels")
+    smart_splitting: bool = Field(True, description="Bool to enable content-aware splitting")
+    preserve_context: bool = Field(True, description="Bool to prevent cutting important elements")
     # General settings
-    wait_time: int = Field(3000, description = "Wait time before capture (ms)")
-    headless: bool = Field(True, description = "Run browser headlessly")
-    max_pages: int = Field(10, description = "Maximum pages to crawl")
-    page_timeout: int = Field(60000, description = "Page load timeout (ms)")
-    navigation_timeout: int = Field(30000, description = "Navigation timeout (ms)")
-    retry_attempts: int = Field(2, description = "Number of retry attempts for failures")
+    wait_time: int = Field(3000, description="Wait time before capture (ms)")
+    headless: bool = Field(True, description="Run browser headlessly")
+    max_pages: int = Field(10, description="Maximum pages to crawl")
+    page_timeout: int = Field(60000, description="Page load timeout (ms)")
+    navigation_timeout: int = Field(30000, description="Navigation timeout (ms)")
+    retry_attempts: int = Field(2, description="Number of retry attempts for failures")
     # Text mode specific settings
-    extract_links: bool = Field(True, description = "Bool to extract hyperlinks from pages")
-    extract_images: bool = Field(True, description = "Bool to extract image metadata")
-    clean_text: bool = Field(True, description = "Bool to clean extracted text content")
-    save_html: bool = Field(False, description = "Bool to save raw HTML content")
-    content_selectors: List[str] = Field(None, description = "List of CSS selectors for content extraction")
+    extract_links: bool = Field(True, description="Bool to extract hyperlinks from pages")
+    extract_images: bool = Field(True, description="Bool to extract image metadata")
+    clean_text: bool = Field(True, description="Bool to clean extracted text content")
+    save_html: bool = Field(False, description="Bool to save raw HTML content")
+    content_selectors: List[str] = Field(None, description="List of CSS selectors for content extraction")
     # Recursive crawling settings
-    max_depth: int = Field(1, description = "Maximum depth to crawl (1 = no recursion, 2 = one level deep, etc.)")
-    same_domain_only: bool = Field(True, description = "Bool to only crawl URLs from the same domain as starting URLs")
-    url_patterns: List[str] = Field(None, description = "List of regex patterns that URLs must match to be crawled")
-    exclude_patterns: List[str] = Field(None, description = "List of regex patterns to exclude from crawling")
-    delay_between_requests: float = Field(1.0, description = "Delay in seconds between requests to be respectful")
+    max_depth: int = Field(1, description="Maximum depth to crawl (1 = no recursion, 2 = one level deep, etc.)")
+    same_domain_only: bool = Field(True, description="Bool to only crawl URLs from the same domain as starting URLs")
+    url_patterns: List[str] = Field(None, description="List of regex patterns that URLs must match to be crawled")
+    exclude_patterns: List[str] = Field(None, description="List of regex patterns to exclude from crawling")
+    delay_between_requests: float = Field(1.0, description="Delay in seconds between requests to be respectful")
     # Content detection settings
-    min_content_length: int = Field(300, description = "Minimum number of characters to consider a block being valid content")
+    min_content_length: int = Field(300, description="Minimum number of characters to consider a block being valid content")
     # Boilerplate removal settings
-    boilerplate_shingle_size: int = Field(5, description = "Lines per shingle for boilerplate detection")  
-    boilerplate_threshold: float = Field(0.5, description = "Minimum percentage of pages containing shingle to be considered boilerplate")
+    boilerplate_shingle_size: int = Field(5, description="Lines per shingle for boilerplate detection")  
+    boilerplate_threshold: float = Field(0.5, description="Minimum percentage of pages containing shingle to be considered boilerplate")
 
 class JobResponse(BaseModel):
     job_id: str
@@ -92,7 +94,7 @@ class JobStatusResponse(BaseModel):
 async def run_in_executor(func, *args, **kwargs):
     """Run synchronous function in thread pool"""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(executor, func, *args, **kwargs)
+    return await loop.run_in_executor(executor, lambda: func(*args, **kwargs))
 
 # Database operations (synchronous functions)
 def create_job_in_db_sync(params: Dict[str, Any]) -> str:
@@ -102,8 +104,8 @@ def create_job_in_db_sync(params: Dict[str, Any]) -> str:
         "params": params,
         "result": None,
         "error": None,
-        "created_at": str(datetime.now()),
-        "updated_at": str(datetime.now()),
+        "created_at": datetime.now(),
+        "updated_at": datetime.now(),
         "completed_at": None,
         "progress": 0
     }
@@ -115,7 +117,7 @@ def update_job_status_sync(job_id: str, status: JobStatus, **kwargs):
     """Update job status in MongoDB (synchronous)"""
     update_data = {
         "status": status,
-        "updated_at": str(datetime.now())
+        "updated_at": datetime.now()
     }
     update_data.update(kwargs)
     
@@ -197,64 +199,58 @@ async def delete_job_from_db(job_id: str) -> bool:
 async def get_job_stats() -> Dict:
     return await run_in_executor(get_job_stats_sync)
 
-# Long-running function that runs in a separate thread
-def long_running_function_sync(job_id: str,
-        urls:Union[str,List[str]],
-        mode: str = "text",
-        output_dir: str = "crawler_output",
-        # A4 visual settings
-        page_width: int = 1920,
-        min_overlap: int = 50,
-        smart_splitting: bool = True,
-        preserve_context: bool = True,
-        # General settings
-        wait_time: int = 3000,
-        headless: bool = True,
-        max_pages: int = 10,
-        page_timeout: int = 60000,
-        navigation_timeout: int = 30000,
-        retry_attempts: int = 2,
-        # Text mode specific settings
-        extract_links: bool = True,
-        extract_images: bool = True,
-        clean_text: bool = True,
-        save_html: bool = False,
-        content_selectors: List[str] = None,
-        # Recursive crawling settings
-        max_depth: int = 1,
-        same_domain_only: bool = True,
-        url_patterns: List[str] = None,
-        exclude_patterns: List[str] = None,
-        delay_between_requests: float = 1.0,
-        # Content detection settings
-        min_content_length: int = 300,  # Minimum characters to consider valid content
-        # Boilerplate removal settings
-        boilerplate_shingle_size: int = 5,  # Lines per shingle for boilerplate detection
-        boilerplate_threshold: float = 0.5  # Min percentage of pages containing shingle to be considered boilerplate
-        ):
-    """
-    Long-running function that runs synchronously in a separate thread
-    """
+# Function to run the crawl in a separate thread
+def run_crawl(job_id: str, crawl_request: CrawlRequest):
+    """Run the crawl operation in a separate thread"""
     try:
-        print(f"Starting job {job_id}")
-        
-        # Update job status to running
+        logger.info(f"Starting crawl job: {job_id}")
         update_job_status_sync(job_id, JobStatus.RUNNING, progress=0)
         
-        # Begin crawl
-        results =  EagleCrawler.crawl(urls)
-        result = []
-        # Simulate final result
+        # Create crawler instance with all parameters
+        crawler = EagleCrawler(
+            mode=crawl_request.mode,
+            output_dir=crawl_request.output_dir,
+            page_width=crawl_request.page_width,
+            min_overlap=crawl_request.min_overlap,
+            smart_splitting=crawl_request.smart_splitting,
+            preserve_context=crawl_request.preserve_context,
+            wait_time=crawl_request.wait_time,
+            headless=crawl_request.headless,
+            max_pages=crawl_request.max_pages,
+            page_timeout=crawl_request.page_timeout,
+            navigation_timeout=crawl_request.navigation_timeout,
+            retry_attempts=crawl_request.retry_attempts,
+            extract_links=crawl_request.extract_links,
+            extract_images=crawl_request.extract_images,
+            clean_text=crawl_request.clean_text,
+            save_html=crawl_request.save_html,
+            content_selectors=crawl_request.content_selectors,
+            max_depth=crawl_request.max_depth,
+            same_domain_only=crawl_request.same_domain_only,
+            url_patterns=crawl_request.url_patterns,
+            exclude_patterns=crawl_request.exclude_patterns,
+            delay_between_requests=crawl_request.delay_between_requests,
+            min_content_length=crawl_request.min_content_length,
+            boilerplate_shingle_size=crawl_request.boilerplate_shingle_size,
+            boilerplate_threshold=crawl_request.boilerplate_threshold
+        )
+        
+        # Run the crawl synchronously
+        results = asyncio.run(crawler.crawl(crawl_request.urls))
+        
+        # Process results
+        formatted_results = []
         for res in results:
-            result.append({
-                "url" : res.url,
-                "depth" : res.metadata.get('crawl_depth', 0) if res.metadata else 0,
-                "status" : '✅ Success' if not res.error else '❌ Error',
+            bp = res.metadata.get("boilerplate_removed", {}) if res.metadata else {}
+            result_item = {
+                "url": res.url,
+                "depth": res.metadata.get('crawl_depth', 0) if res.metadata else 0,
+                "status": '✅ Success' if not res.error else '❌ Error',
                 "error": res.error if res.error else "",
                 "text_length": len(res.text_content) if not res.error else 0,
                 "links_found": len(res.links) if not res.error else 0,
-                "boilerplate_removed": bp['removed_lines'] if "boilerplate_removed" in res.metadata else 0,
-                "boilerplate_percent": bp['removal_percentage'],
+                "boilerplate_removed": bp.get('removed_lines', 0),
+                "boilerplate_percent": bp.get('removal_percentage', 0.0),
                 "screenshot_paths": res.screenshot_paths,
                 "crawl_time": res.timestamp,
                 "text_content": res.text_content,
@@ -262,68 +258,27 @@ def long_running_function_sync(job_id: str,
                 "status_code": res.status_code,
                 "title": res.title,
                 "page_count": res.page_count
-            })
+            }
+            formatted_results.append(result_item)
         
-        # Update job with completion
+        # Update job with results
         update_job_status_sync(
             job_id, 
             JobStatus.COMPLETED, 
-            result=result,
-            completed_at=str(datetime.now()),
+            result=formatted_results,
+            completed_at=datetime.now(),
             progress=100
         )
-        
-        print(f"Job {job_id} completed successfully")
+        logger.info(f"Job {job_id} completed successfully")
         
     except Exception as e:
-        # Handle errors
+        logger.error(f"Job {job_id} failed: {str(e)}")
         update_job_status_sync(
             job_id,
             JobStatus.FAILED,
             error=str(e),
-            completed_at=str(datetime.now())
+            completed_at=datetime.now()
         )
-        print(f"Job {job_id} failed: {str(e)}")
-
-# Async wrapper for the long-running function
-async def long_running_function(job_id: str,
-        urls:Union[str,List[str]],
-        mode: str = "text",
-        output_dir: str = "crawler_output",
-        # A4 visual settings
-        page_width: int = 1920,
-        min_overlap: int = 50,
-        smart_splitting: bool = True,
-        preserve_context: bool = True,
-        # General settings
-        wait_time: int = 3000,
-        headless: bool = True,
-        max_pages: int = 10,
-        page_timeout: int = 60000,
-        navigation_timeout: int = 30000,
-        retry_attempts: int = 2,
-        # Text mode specific settings
-        extract_links: bool = True,
-        extract_images: bool = True,
-        clean_text: bool = True,
-        save_html: bool = False,
-        content_selectors: List[str] = None,
-        # Recursive crawling settings
-        max_depth: int = 1,
-        same_domain_only: bool = True,
-        url_patterns: List[str] = None,
-        exclude_patterns: List[str] = None,
-        delay_between_requests: float = 1.0,
-        # Content detection settings
-        min_content_length: int = 300,  # Minimum characters to consider valid content
-        # Boilerplate removal settings
-        boilerplate_shingle_size: int = 5,  # Lines per shingle for boilerplate detection
-        boilerplate_threshold: float = 0.5  # Min percentage of pages containing shingle to be considered boilerplate
-        ):
-    """
-    Async wrapper that runs the long-running function in a separate thread
-    """
-    await run_in_executor(EagleCrawler.crawl, job_id, urls)
 
 # Initialize database indexes
 def init_database():
@@ -333,23 +288,23 @@ def init_database():
         jobs_collection.create_index("status")
         jobs_collection.create_index("created_at")
         jobs_collection.create_index([("status", ASCENDING), ("created_at", DESCENDING)])
-        print("Database indexes created successfully")
+        logger.info("Database indexes created successfully")
     except Exception as e:
-        print(f"Error creating indexes: {e}")
+        logger.error(f"Error creating indexes: {e}")
 
 # API Endpoints
 @app.on_event("startup")
 async def startup_event():
     """Initialize database on startup"""
     await run_in_executor(init_database)
-    print("Connected to MongoDB with PyMongo")
+    logger.info("Connected to MongoDB with PyMongo")
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Close database connection on shutdown"""
     client.close()
     executor.shutdown(wait=True)
-    print("Disconnected from MongoDB")
+    logger.info("Disconnected from MongoDB")
 
 @app.post("/jobs", response_model=JobResponse)
 async def create_job(crawl_request: CrawlRequest, background_tasks: BackgroundTasks):
@@ -360,37 +315,8 @@ async def create_job(crawl_request: CrawlRequest, background_tasks: BackgroundTa
         # Create job in database
         job_id = await create_job_in_db(crawl_request.model_dump())
         
-        # Add the long-running function to background tasks
-        background_tasks.add_task(
-            long_running_function,
-            job_id,
-            crawl_request.urls,
-            crawl_request.mode,
-            crawl_request.output_dir,
-            crawl_request.page_width,
-            crawl_request.min_overlap,
-            crawl_request.smart_splitting,
-            crawl_request.preserve_context,
-            crawl_request.wait_time,
-            crawl_request.headless,
-            crawl_request.max_pages,
-            crawl_request.page_timeout,
-            crawl_request.navigation_timeout,
-            crawl_request.retry_attempts,
-            crawl_request.extract_links,
-            crawl_request.extract_images,
-            crawl_request.clean_text,
-            crawl_request.save_html,
-            crawl_request.content_selectors,
-            crawl_request.max_depth,
-            crawl_request.same_domain_only,
-            crawl_request.url_patterns,
-            crawl_request.exclude_patterns,
-            crawl_request.delay_between_requests,
-            crawl_request.min_content_length,
-            crawl_request.boilerplate_shingle_size,
-            crawl_request.boilerplate_threshold
-        )
+        # Add the crawl task to background tasks
+        background_tasks.add_task(run_crawl, job_id, crawl_request)
         
         return JobResponse(
             job_id=job_id,
@@ -399,7 +325,8 @@ async def create_job(crawl_request: CrawlRequest, background_tasks: BackgroundTa
         )
     
     except Exception as e:  
-        raise HTTPException(status_code=500, detail=f"Failed to create  ob: {str(e)}")
+        logger.error(f"Failed to create job: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create job: {str(e)}")
 
 @app.get("/jobs/{job_id}", response_model=JobStatusResponse)
 async def get_job_status(job_id: str):
@@ -459,7 +386,7 @@ async def get_job_statistics():
     """
     Get job statistics
     """
-    stats = await get_job_stats()
+    stats = await get_job_stats()       
     return stats
 
 @app.get("/health")
@@ -472,20 +399,8 @@ async def health_check():
         await run_in_executor(lambda: client.admin.command('ping'))
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
         return {"status": "unhealthy", "database": "disconnected", "error": str(e)}
-
-# Direct synchronous endpoint example (if you want to avoid async entirely)
-@app.get("/jobs/{job_id}/sync")
-def get_job_status_sync(job_id: str):
-    """
-    Synchronous version of get job status (no async/await)
-    """
-    job = get_job_from_db_sync(job_id)
-    
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    
-    return JobStatusResponse(**job)
 
 if __name__ == "__main__":
     import uvicorn
