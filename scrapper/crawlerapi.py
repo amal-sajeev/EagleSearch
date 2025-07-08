@@ -11,6 +11,8 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import logging
+import contextlib
+from asyncio import Event
 
 from eaglecrawler import EagleCrawler
 
@@ -32,12 +34,17 @@ client = MongoClient(MONGODB_URL)
 database = client[DATABASE_NAME]
 jobs_collection = database[COLLECTION_NAME]
 
+# Global dictionary to track active tasks
+active_tasks: Dict[str, asyncio.Task] = {}
+task_lock = asyncio.Lock()
+
 # Job status enum
 class JobStatus(str, Enum): 
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 # Request models
 class CrawlRequest(BaseModel):
@@ -199,12 +206,12 @@ async def delete_job_from_db(job_id: str) -> bool:
 async def get_job_stats() -> Dict:
     return await run_in_executor(get_job_stats_sync)
 
-# Function to run the crawl in a separate thread
-def run_crawl(job_id: str, crawl_request: CrawlRequest):
-    """Run the crawl operation in a separate thread"""
+# Function to run the crawl in an asyncio task
+async def run_crawl(job_id: str, crawl_request: CrawlRequest, cancellation_event: asyncio.Event):
+    """Run the crawl operation in an asyncio task"""
     try:
         logger.info(f"Starting crawl job: {job_id}")
-        update_job_status_sync(job_id, JobStatus.RUNNING, progress=0)
+        await update_job_status(job_id, JobStatus.RUNNING, progress=0)
         
         # Create crawler instance with all parameters
         crawler = EagleCrawler(
@@ -232,11 +239,23 @@ def run_crawl(job_id: str, crawl_request: CrawlRequest):
             delay_between_requests=crawl_request.delay_between_requests,
             min_content_length=crawl_request.min_content_length,
             boilerplate_shingle_size=crawl_request.boilerplate_shingle_size,
-            boilerplate_threshold=crawl_request.boilerplate_threshold
+            boilerplate_threshold=crawl_request.boilerplate_threshold,
+            cancellation_event=cancellation_event  # Pass cancellation event to crawler
         )
         
-        # Run the crawl synchronously
-        results = asyncio.run(crawler.crawl(crawl_request.urls))
+        # Run the crawl asynchronously
+        results = await crawler.crawl(crawl_request.urls)
+        
+        # Check if job was cancelled during processing
+        if cancellation_event.is_set():
+            logger.info(f"Job {job_id} was cancelled during processing")
+            await update_job_status(
+                job_id,
+                JobStatus.CANCELLED,
+                error="Job cancelled during processing",
+                completed_at=datetime.now()
+            )
+            return
         
         # Process results
         formatted_results = []
@@ -262,7 +281,7 @@ def run_crawl(job_id: str, crawl_request: CrawlRequest):
             formatted_results.append(result_item)
         
         # Update job with results
-        update_job_status_sync(
+        await update_job_status(
             job_id, 
             JobStatus.COMPLETED, 
             result=formatted_results,
@@ -271,14 +290,27 @@ def run_crawl(job_id: str, crawl_request: CrawlRequest):
         )
         logger.info(f"Job {job_id} completed successfully")
         
+    except asyncio.CancelledError:
+        logger.info(f"Job {job_id} was cancelled")
+        await update_job_status(
+            job_id,
+            JobStatus.CANCELLED,
+            error="Job cancelled by user",
+            completed_at=datetime.now()
+        )
     except Exception as e:
         logger.error(f"Job {job_id} failed: {str(e)}")
-        update_job_status_sync(
+        await update_job_status(
             job_id,
             JobStatus.FAILED,
             error=str(e),
             completed_at=datetime.now()
         )
+    finally:
+        # Clean up task tracking
+        async with task_lock:
+            if job_id in active_tasks:
+                del active_tasks[job_id]
 
 # Initialize database indexes
 def init_database():
@@ -302,12 +334,21 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Close database connection on shutdown"""
+    # Cancel all active tasks
+    async with task_lock:
+        for job_id, task in list(active_tasks.items()):
+            task.cancel()
+            logger.info(f"Cancelling task for job {job_id} during shutdown")
+    
+    # Give tasks time to handle cancellation
+    await asyncio.sleep(1)
+    
     client.close()
     executor.shutdown(wait=True)
     logger.info("Disconnected from MongoDB")
 
 @app.post("/jobs", response_model=JobResponse)
-async def create_job(crawl_request: CrawlRequest, background_tasks: BackgroundTasks):
+async def create_job(crawl_request: CrawlRequest):
     """
     Create a new background job
     """
@@ -315,8 +356,14 @@ async def create_job(crawl_request: CrawlRequest, background_tasks: BackgroundTa
         # Create job in database
         job_id = await create_job_in_db(crawl_request.model_dump())
         
-        # Add the crawl task to background tasks
-        background_tasks.add_task(run_crawl, job_id, crawl_request)
+        # Create cancellation event for this job
+        cancellation_event = asyncio.Event()
+        
+        # Create and track the crawl task
+        task = asyncio.create_task(run_crawl(job_id, crawl_request, cancellation_event))
+        
+        async with task_lock:
+            active_tasks[job_id] = (task, cancellation_event)
         
         return JobResponse(
             job_id=job_id,
@@ -357,6 +404,14 @@ async def delete_job(job_id: str):
     """
     Delete a job record
     """
+    # Cancel the task if it's running
+    async with task_lock:
+        if job_id in active_tasks:
+            task, cancellation_event = active_tasks[job_id]
+            task.cancel()
+            del active_tasks[job_id]
+    
+    # Delete from database
     success = await delete_job_from_db(job_id)
     
     if not success:
@@ -367,19 +422,40 @@ async def delete_job(job_id: str):
 @app.post("/jobs/{job_id}/cancel")
 async def cancel_job(job_id: str):
     """
-    Cancel a pending job
+    Cancel a pending or running job
     """
+    async with task_lock:
+        if job_id in active_tasks:
+            task, cancellation_event = active_tasks[job_id]
+            
+            # Set cancellation event to notify crawler
+            cancellation_event.set()
+            
+            # Cancel the asyncio task
+            task.cancel()
+            
+            # Remove from active tasks
+            del active_tasks[job_id]
+            
+            logger.info(f"Job {job_id} cancellation requested")
+            return {"message": "Job cancellation requested"}
+    
+    # If no active task, check job status
     job = await get_job_from_db(job_id)
     
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    if job["status"] in [JobStatus.COMPLETED, JobStatus.FAILED]:
-        raise HTTPException(status_code=400, detail="Cannot cancel completed or failed job")
+    if job["status"] == JobStatus.PENDING:
+        await update_job_status(job_id, JobStatus.CANCELLED, error="Job cancelled before starting")
+        return {"message": "Job was pending and has been cancelled"}
     
-    await update_job_status(job_id, JobStatus.FAILED, error="Job cancelled by user")
+    if job["status"] in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]:
+        raise HTTPException(status_code=400, detail="Cannot cancel completed, failed or cancelled job")
     
-    return {"message": "Job cancelled successfully"}
+    # For jobs that are running but not in active_tasks (shouldn't happen normally)
+    await update_job_status(job_id, JobStatus.CANCELLED, error="Job cancelled externally")
+    return {"message": "Job marked as cancelled"}
 
 @app.get("/stats")
 async def get_job_statistics():

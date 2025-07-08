@@ -16,7 +16,7 @@ import re
 from collections import defaultdict
 from datetime import datetime
 from playwright.async_api import async_playwright, Page, Browser, BrowserContext
-
+from asyncio import Event
 
 @dataclass
 class CrawlResult:
@@ -451,7 +451,8 @@ class EagleCrawler:
         min_content_length: int = 300,  # Minimum characters to consider valid content
         # Boilerplate removal settings
         boilerplate_shingle_size: int = 5,  # Lines per shingle for boilerplate detection
-        boilerplate_threshold: float = 0.5  # Min percentage of pages containing shingle to be considered boilerplate
+        boilerplate_threshold: float = 0.5,  # Min percentage of pages containing shingle to be considered boilerplate
+        cancellation_event: Event = None  # Cancellation event parameter
     ):
         """
         Initialize the enhanced crawler
@@ -536,7 +537,7 @@ class EagleCrawler:
         self.allowed_domains = set()  # Domains we're allowed to crawl
         self.crawl_results = []
         self.url_to_depth = {}  # Track depth of each URL
-        
+        self.cancellation_event = cancellation_event or Event()
         print(f"Initialized crawler with A4 dimensions: {self.a4_width}x{self.a4_height}px at {page_width}DPI")
     
     def _is_valid_url(self, url: str, base_url: str, current_depth: int) -> bool:
@@ -1304,10 +1305,10 @@ class EagleCrawler:
             
             # NEW: Clean up temporary element if we used fallback
             if using_fallback and temp_id:
-                await page.evaluate(f"""(temp_id) => {{
+                await page.evaluate("""(temp_id) => {
                     const el = document.getElementById(temp_id);
                     if (el) el.remove();
-                }}""", temp_id)
+                }""", temp_id)  # ✅ Only 2 arguments
             
             return {
                 'text_content': content_data['text'],
@@ -1453,8 +1454,11 @@ class EagleCrawler:
             self._initialize_crawl_queue(start_urls)
             pages_crawled = 0
             
-            while self.crawl_queue and pages_crawled < self.max_pages:
+            while self.crawl_queue and pages_crawled < self.max_pages and not self.cancellation_event.is_set():
                 # Get next URL from queue
+                if self.cancellation_event.is_set():
+                    print("🛑 Crawl cancelled by user")
+                    break
                 current_url, current_depth = self.crawl_queue.pop(0)
                 
                 # Skip if already visited (shouldn't happen, but safety check)
@@ -1541,6 +1545,10 @@ class EagleCrawler:
 
         try:
             for i, url in enumerate(urls):
+            # Check cancellation before processing each URL
+                if self.cancellation_event.is_set():
+                    print("🛑 Crawl cancelled by user")
+                    break
                 if i >= self.max_pages:
                     break
                 if url in self.visited_urls:
@@ -1681,6 +1689,11 @@ class EagleCrawler:
         Returns:
             List of CrawlResult objects
         """
+        # Check cancellation before starting
+        if self.cancellation_event.is_set():
+            print("🛑 Crawl cancelled before starting")
+            return []
+
         if type(urls) == str:
             urls = [urls]
         if self.max_depth <= 1:
