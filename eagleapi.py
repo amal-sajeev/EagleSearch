@@ -104,10 +104,11 @@ def delete_collection(name:str):
     return(eagle._delete_collection(name))
 
 
-@app.get("/allcols")
+@app.get("/collections")
 def get_all_collections():
     try:
         return(eagle.get_collections())
     except Exception as e:
         print(f"ERROR GETTING ALL COLLECTIONS ON {datetime.now().strftime('%Y_%m_%d')}: {e}")
 
+# @app.post("/crawl")
